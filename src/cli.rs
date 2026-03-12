@@ -1,0 +1,58 @@
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser, Debug)]
+#[command(name = "smartgrep", about = "Structural code navigation for agents")]
+pub struct Cli {
+    /// Output format: text or json
+    #[arg(long, default_value = "text", global = true)]
+    pub format: String,
+
+    /// Disable colored output
+    #[arg(long, global = true)]
+    pub no_color: bool,
+
+    /// Project root directory
+    #[arg(long, global = true)]
+    pub project_root: Option<PathBuf>,
+
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Structural summary of a file
+    Context {
+        /// Path to the file to analyze
+        file: PathBuf,
+    },
+    /// List symbols (functions, structs, traits, etc.)
+    Ls {
+        /// Symbol type to filter by
+        symbol_type: Option<String>,
+    },
+    /// Show detail for a named symbol
+    Show {
+        /// Symbol name
+        name: String,
+    },
+    /// Show what a symbol depends on
+    Deps {
+        /// Symbol name
+        name: String,
+    },
+    /// Show what references a symbol
+    Refs {
+        /// Symbol name
+        name: String,
+    },
+    /// Force re-index
+    Index,
+    /// Run a composable query against the index
+    Query {
+        /// Query string (e.g. "structs where visibility = public | with fields")
+        query: String,
+    },
+}

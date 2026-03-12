@@ -1,0 +1,24 @@
+[package]
+name = "smartgrep"
+version = "0.1.0"
+edition = "2021"
+description = "Structural code navigation for agents"
+
+[lib]
+name = "smartgrep"
+path = "src/lib.rs"
+
+[[bin]]
+name = "smartgrep"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+walkdir = "2"
+ignore = "0.4"
+anyhow = "1"

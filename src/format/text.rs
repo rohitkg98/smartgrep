@@ -1,0 +1,88 @@
+use crate::ir::types::{Ir, Symbol, SymbolKind};
+
+/// Format IR symbols as greppable text output.
+/// Each line: kind\tname\tfile:line\t[extra]
+pub fn format_symbols(ir: &Ir) -> String {
+    let mut lines = Vec::new();
+
+    // Compute column widths for alignment
+    let kind_width = ir
+        .symbols
+        .iter()
+        .map(|s| format!("{}", s.kind).len())
+        .max()
+        .unwrap_or(0);
+    let name_width = ir
+        .symbols
+        .iter()
+        .map(|s| display_name(s).len())
+        .max()
+        .unwrap_or(0);
+
+    for sym in &ir.symbols {
+        let kind_str = format!("{}", sym.kind);
+        let name = display_name(sym);
+        let loc = format!("{}:{}", sym.loc.file.display(), sym.loc.line);
+
+        let extra = build_extra(sym);
+
+        let line = if extra.is_empty() {
+            format!("{:<kw$}  {:<nw$}  {}", kind_str, name, loc, kw = kind_width, nw = name_width)
+        } else {
+            format!(
+                "{:<kw$}  {:<nw$}  {}  {}",
+                kind_str,
+                name,
+                loc,
+                extra,
+                kw = kind_width,
+                nw = name_width,
+            )
+        };
+        lines.push(line);
+    }
+
+    lines.join("\n")
+}
+
+fn display_name(sym: &Symbol) -> String {
+    if let Some(ref parent) = sym.parent {
+        format!("{}::{}", parent, sym.name)
+    } else {
+        sym.name.clone()
+    }
+}
+
+fn build_extra(sym: &Symbol) -> String {
+    match sym.kind {
+        SymbolKind::Function | SymbolKind::Method => {
+            let params: Vec<String> = sym
+                .params
+                .iter()
+                .filter(|p| p.name != "self")
+                .map(|p| {
+                    if p.type_name.is_empty() {
+                        p.name.clone()
+                    } else {
+                        format!("{}: {}", p.name, p.type_name)
+                    }
+                })
+                .collect();
+            let ret = sym
+                .return_type
+                .as_ref()
+                .map(|r| format!(" {}", r))
+                .unwrap_or_default();
+            format!("({}){}", params.join(", "), ret)
+        }
+        SymbolKind::Struct => {
+            if sym.fields.is_empty() {
+                String::new()
+            } else {
+                let field_names: Vec<&str> = sym.fields.iter().map(|f| f.name.as_str()).collect();
+                format!("{{{}}}", field_names.join(", "))
+            }
+        }
+        _ => String::new(),
+    }
+}
