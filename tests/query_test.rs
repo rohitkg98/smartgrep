@@ -504,3 +504,212 @@ fn query_parse_error_bad_operator() {
 fn query_parse_error_incomplete_condition() {
     assert!(parser::parse("structs where name").is_err());
 }
+
+// --- OR support tests ---
+
+#[test]
+fn query_simple_or() {
+    // "foo" is a function (2 matches), "Bar" is a struct (1 match)
+    let rows = run_query("symbols where name = 'foo' or name = 'Bar'");
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|r| {
+        let name = r.get("name").unwrap();
+        name == "foo" || name == "Bar"
+    }));
+}
+
+#[test]
+fn query_mixed_and_or() {
+    // (name = 'foo' AND visibility = public) OR (name = 'run')
+    // public foo = alpha::foo, run = commands::run
+    let rows = run_query("functions where name = 'foo' and visibility = public or name = 'run'");
+    assert_eq!(rows.len(), 2);
+    let names: Vec<&str> = rows.iter().map(|r| r.get("name").unwrap().as_str()).collect();
+    assert!(names.contains(&"foo"));
+    assert!(names.contains(&"run"));
+}
+
+#[test]
+fn query_multiple_or() {
+    // name = 'foo' OR name = 'Bar' OR name = 'Baz'
+    let rows = run_query("symbols where name = 'foo' or name = 'Bar' or name = 'Baz'");
+    assert_eq!(rows.len(), 4); // 2 foo + 1 Bar + 1 Baz
+}
+
+#[test]
+fn query_or_in_pipeline_stage() {
+    // Use OR in a post-filter where stage
+    let rows = run_query("symbols | where name = 'Bar' or name = 'Baz'");
+    assert_eq!(rows.len(), 2);
+    let names: Vec<&str> = rows.iter().map(|r| r.get("name").unwrap().as_str()).collect();
+    assert!(names.contains(&"Bar"));
+    assert!(names.contains(&"Baz"));
+}
+
+#[test]
+fn query_or_backward_compat_and_only() {
+    // Existing and-only queries still work
+    let rows = run_query("functions where name = 'run' and file contains 'commands/'");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("name").unwrap(), "run");
+}
+
+#[test]
+fn query_or_deps_source() {
+    // OR in deps where clause
+    let rows = run_query("deps where kind = type_ref or kind = call");
+    assert_eq!(rows.len(), 2);
+}
+
+#[test]
+fn query_or_with_contains() {
+    // Simulates the motivating use case: matching multiple attribute patterns
+    let rows = run_query("structs where name contains 'Bar' or name contains 'Big'");
+    assert_eq!(rows.len(), 2);
+    let names: Vec<&str> = rows.iter().map(|r| r.get("name").unwrap().as_str()).collect();
+    assert!(names.contains(&"Bar"));
+    assert!(names.contains(&"BigStruct"));
+}
+
+// --- Path alias tests ---
+
+// --- Attribute filtering tests ---
+
+fn run_java_query(query_str: &str) -> Vec<engine::Row> {
+    let ir = java_test_ir();
+    let index = builder::build(&ir);
+    let batch = parser::parse(query_str).unwrap();
+    assert_eq!(batch.queries.len(), 1, "expected single query");
+    engine::execute_query(&batch.queries[0], &index).unwrap()
+}
+
+#[test]
+fn query_where_attributes_contains() {
+    let rows = run_java_query("methods where attributes contains '@PostMapping'");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("name").unwrap(), "listProducts");
+}
+
+#[test]
+fn query_where_attributes_contains_no_match() {
+    let rows = run_java_query("methods where attributes contains '@DeleteMapping'");
+    assert_eq!(rows.len(), 0);
+}
+
+#[test]
+fn query_where_attributes_contains_partial() {
+    // Should match because contains checks substrings
+    let rows = run_java_query("symbols where attributes contains '@Timed'");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("name").unwrap(), "listProducts");
+}
+
+// --- Path alias tests (continued) ---
+
+/// Build a test IR with long Java-like paths to exercise path aliasing.
+fn java_test_ir() -> Ir {
+    let file_a = PathBuf::from("src/main/java/com/example/ecommerce/catalog/controller/ProductController.java");
+    let file_b = PathBuf::from("src/main/java/com/example/ecommerce/catalog/service/InventoryService.java");
+
+    let symbols = vec![
+        Symbol {
+            name: "ProductController".to_string(),
+            qualified_name: "com.example.ecommerce.catalog.controller.ProductController".to_string(),
+            kind: SymbolKind::Struct,
+            loc: SourceLoc { file: file_a.clone(), line: 5, col: 1 },
+            visibility: Visibility::Public,
+            signature: None,
+            parent: None,
+            attributes: vec![],
+            fields: vec![],
+            params: vec![],
+            return_type: None,
+        },
+        Symbol {
+            name: "listProducts".to_string(),
+            qualified_name: "com.example.ecommerce.catalog.controller.ProductController.listProducts".to_string(),
+            kind: SymbolKind::Method,
+            loc: SourceLoc { file: file_a.clone(), line: 12, col: 5 },
+            visibility: Visibility::Public,
+            signature: None,
+            parent: Some("ProductController".to_string()),
+            attributes: vec!["@PostMapping(\"/execute-commands\")".to_string(), "@Timed".to_string()],
+            fields: vec![],
+            params: vec![],
+            return_type: None,
+        },
+        Symbol {
+            name: "InventoryService".to_string(),
+            qualified_name: "com.example.ecommerce.catalog.service.InventoryService".to_string(),
+            kind: SymbolKind::Struct,
+            loc: SourceLoc { file: file_b.clone(), line: 3, col: 1 },
+            visibility: Visibility::Public,
+            signature: None,
+            parent: None,
+            attributes: vec![],
+            fields: vec![],
+            params: vec![],
+            return_type: None,
+        },
+    ];
+
+    Ir { symbols, dependencies: vec![] }
+}
+
+#[test]
+fn query_text_output_has_path_alias_header() {
+    let ir = java_test_ir();
+    let index = builder::build(&ir);
+    let batch = parser::parse("symbols").unwrap();
+    let output = engine::execute_batch(&batch, &index, "text").unwrap();
+    // Should contain the alias header
+    assert!(output.contains("[paths]"), "output should contain [paths] header:\n{}", output);
+    assert!(output.contains("[P]"), "output should contain [P] alias:\n{}", output);
+    assert!(output.contains("src/main/java/com/example/ecommerce/catalog/"),
+        "alias header should contain the common prefix:\n{}", output);
+}
+
+#[test]
+fn query_text_output_uses_short_paths() {
+    let ir = java_test_ir();
+    let index = builder::build(&ir);
+    let batch = parser::parse("symbols").unwrap();
+    let output = engine::execute_batch(&batch, &index, "text").unwrap();
+    // Result lines should use [P] prefix, not full path
+    // In query output, file and line are separate columns
+    assert!(output.contains("[P]controller/ProductController.java"),
+        "should use shortened path for controller:\n{}", output);
+    assert!(output.contains("[P]service/InventoryService.java"),
+        "should use shortened path for service:\n{}", output);
+    // Full paths should NOT appear in result lines (only in the alias header)
+    let lines: Vec<&str> = output.lines().collect();
+    // Skip the header line and blank line, check data lines don't have the full prefix
+    for line in lines.iter().skip(2) {
+        if !line.is_empty() {
+            assert!(!line.contains("src/main/java/com/example/ecommerce/catalog/controller/"),
+                "data line should not contain full path:\n{}", line);
+        }
+    }
+}
+
+#[test]
+fn query_json_output_keeps_full_paths() {
+    let ir = java_test_ir();
+    let index = builder::build(&ir);
+    let batch = parser::parse("symbols").unwrap();
+    let output = engine::execute_batch(&batch, &index, "json").unwrap();
+    // JSON should keep full paths, no [P] alias
+    assert!(!output.contains("[P]"), "JSON output should not contain [P]:\n{}", output);
+    assert!(output.contains("src/main/java/com/example/ecommerce/catalog/controller/ProductController.java"),
+        "JSON should have full path:\n{}", output);
+}
+
+#[test]
+fn query_text_output_no_alias_for_short_paths() {
+    // The default test_ir uses short paths like "src/alpha.rs" — no alias should be generated
+    let index = build_test_index();
+    let batch = parser::parse("symbols").unwrap();
+    let output = engine::execute_batch(&batch, &index, "text").unwrap();
+    assert!(!output.contains("[paths]"), "short paths should not trigger alias:\n{}", output);
+    assert!(!output.contains("[P]"), "short paths should not use [P]:\n{}", output);
+}

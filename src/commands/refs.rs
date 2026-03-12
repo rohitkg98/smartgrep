@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::daemon::client;
+use crate::format::path_alias;
 use crate::index::auto;
 use crate::ir::types::Dependency;
 use crate::format::OutputFormat;
@@ -43,6 +44,13 @@ fn resolve_root(project_root: &Option<std::path::PathBuf>) -> Result<std::path::
 }
 
 fn format_text(refs: &[&Dependency]) -> String {
+    // Collect file paths for alias detection
+    let file_paths: Vec<&str> = refs
+        .iter()
+        .map(|d| d.loc.file.to_str().unwrap_or(""))
+        .collect();
+    let alias = path_alias::compute_path_alias(&file_paths);
+
     let kind_width = refs
         .iter()
         .map(|d| dep_kind_str(d).len())
@@ -55,9 +63,22 @@ fn format_text(refs: &[&Dependency]) -> String {
         .unwrap_or(0);
 
     let mut lines = Vec::new();
+
+    // Emit alias header if applicable
+    if let Some(ref a) = alias {
+        lines.push(a.header());
+        lines.push(String::new());
+    }
+
     for dep in refs {
         let kind = dep_kind_str(dep);
-        let loc = format!("{}:{}", dep.loc.file.display(), dep.loc.line);
+        let raw_file = dep.loc.file.to_string_lossy();
+        let file_str = if let Some(ref a) = alias {
+            a.shorten(&raw_file)
+        } else {
+            raw_file.to_string()
+        };
+        let loc = format!("{}:{}", file_str, dep.loc.line);
         lines.push(format!(
             "{:<kw$}  {:<fw$}  {}",
             kind, dep.from_qualified, loc,

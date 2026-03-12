@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::daemon::client;
+use crate::format::path_alias;
 use crate::index::auto;
 use crate::index::types::Index;
 use crate::ir::types::Dependency;
@@ -73,6 +74,20 @@ fn format_text(groups: &[DepsGroup]) -> String {
     let mut lines = Vec::new();
     let multiple_groups = groups.len() > 1;
 
+    // Collect file paths for alias detection
+    let file_paths: Vec<&str> = groups
+        .iter()
+        .flat_map(|g| g.deps.iter())
+        .map(|d| d.loc.file.to_str().unwrap_or(""))
+        .collect();
+    let alias = path_alias::compute_path_alias(&file_paths);
+
+    // Emit alias header if applicable
+    if let Some(ref a) = alias {
+        lines.push(a.header());
+        lines.push(String::new());
+    }
+
     // Compute column widths across all deps
     let kind_width = groups
         .iter()
@@ -99,7 +114,13 @@ fn format_text(groups: &[DepsGroup]) -> String {
         }
         for dep in &group.deps {
             let kind_str = format!("{}", dep.kind);
-            let loc = format!("{}:{}", dep.loc.file.display(), dep.loc.line);
+            let raw_file = dep.loc.file.to_string_lossy();
+            let file_str = if let Some(ref a) = alias {
+                a.shorten(&raw_file)
+            } else {
+                raw_file.to_string()
+            };
+            let loc = format!("{}:{}", file_str, dep.loc.line);
             lines.push(format!(
                 "{:<kw$}  {:<nw$}  {}",
                 kind_str, dep.to_name, loc,

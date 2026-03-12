@@ -228,7 +228,7 @@ fn parse_symbols_source(tokens: &[String], kind_filter: Option<KindFilter>) -> R
 }
 
 /// Parse "where cond1 and cond2 ..." from a token slice that starts with "where".
-fn parse_where_from_tokens(tokens: &[String]) -> Result<Vec<Condition>> {
+fn parse_where_from_tokens(tokens: &[String]) -> Result<Vec<Vec<Condition>>> {
     if tokens.is_empty() {
         return Ok(Vec::new());
     }
@@ -239,12 +239,14 @@ fn parse_where_from_tokens(tokens: &[String]) -> Result<Vec<Condition>> {
 }
 
 /// Parse conditions from tokens starting at "where".
-fn parse_where_conditions(tokens: &[String]) -> Result<Vec<Condition>> {
+/// Returns DNF: Vec of AND-groups, OR'd together.
+fn parse_where_conditions(tokens: &[String]) -> Result<Vec<Vec<Condition>>> {
     if tokens.is_empty() || tokens[0].to_lowercase() != "where" {
         return Err(anyhow!("expected 'where'"));
     }
 
-    let mut conditions = Vec::new();
+    let mut or_groups: Vec<Vec<Condition>> = Vec::new();
+    let mut current_group: Vec<Condition> = Vec::new();
     let mut i = 1; // skip "where"
 
     loop {
@@ -271,15 +273,32 @@ fn parse_where_conditions(tokens: &[String]) -> Result<Vec<Condition>> {
         let value = parse_value(&tokens[i + 2]);
         i += 3;
 
-        conditions.push(Condition { field, op, value });
+        current_group.push(Condition { field, op, value });
 
-        // Check for "and" connector
-        if i < tokens.len() && tokens[i].to_lowercase() == "and" {
-            i += 1;
+        // Check for "and" or "or" connector
+        if i < tokens.len() {
+            match tokens[i].to_lowercase().as_str() {
+                "and" => {
+                    i += 1;
+                    // continue adding to current AND group
+                }
+                "or" => {
+                    i += 1;
+                    // finish current AND group, start new one
+                    or_groups.push(current_group);
+                    current_group = Vec::new();
+                }
+                _ => {}
+            }
         }
     }
 
-    Ok(conditions)
+    // Push the last group
+    if !current_group.is_empty() {
+        or_groups.push(current_group);
+    }
+
+    Ok(or_groups)
 }
 
 /// Parse a pipeline stage.
@@ -436,13 +455,15 @@ mod tests {
         match &q.source {
             Source::Symbols { kind_filter, where_clause, .. } => {
                 assert_eq!(*kind_filter, Some(KindFilter::Functions));
-                assert_eq!(where_clause.len(), 2);
-                assert_eq!(where_clause[0].field, "name");
-                assert_eq!(where_clause[0].op, Op::Eq);
-                assert_eq!(where_clause[0].value, Value::String("run".to_string()));
-                assert_eq!(where_clause[1].field, "file");
-                assert_eq!(where_clause[1].op, Op::Contains);
-                assert_eq!(where_clause[1].value, Value::String("commands/".to_string()));
+                // One AND group with 2 conditions
+                assert_eq!(where_clause.len(), 1);
+                assert_eq!(where_clause[0].len(), 2);
+                assert_eq!(where_clause[0][0].field, "name");
+                assert_eq!(where_clause[0][0].op, Op::Eq);
+                assert_eq!(where_clause[0][0].value, Value::String("run".to_string()));
+                assert_eq!(where_clause[0][1].field, "file");
+                assert_eq!(where_clause[0][1].op, Op::Contains);
+                assert_eq!(where_clause[0][1].value, Value::String("commands/".to_string()));
             }
             _ => panic!("expected Symbols source"),
         }
@@ -502,7 +523,8 @@ mod tests {
         match &q.source {
             Source::Refs { name, where_clause } => {
                 assert!(name.is_none());
-                assert_eq!(where_clause.len(), 1);
+                assert_eq!(where_clause.len(), 1); // one AND group
+                assert_eq!(where_clause[0].len(), 1); // with one condition
             }
             _ => panic!("expected Refs source"),
         }
@@ -521,9 +543,10 @@ mod tests {
         assert_eq!(q.stages.len(), 2);
         match &q.stages[1] {
             Stage::Where { conditions } => {
-                assert_eq!(conditions[0].field, "field_count");
-                assert_eq!(conditions[0].op, Op::Gt);
-                assert_eq!(conditions[0].value, Value::Number(5));
+                assert_eq!(conditions.len(), 1); // one AND group
+                assert_eq!(conditions[0][0].field, "field_count");
+                assert_eq!(conditions[0][0].op, Op::Gt);
+                assert_eq!(conditions[0][0].value, Value::Number(5));
             }
             _ => panic!("expected Where stage"),
         }

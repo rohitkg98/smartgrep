@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 
+use crate::format::path_alias;
 use crate::index::types::Index;
 use crate::ir::types::{Dependency, Symbol, SymbolKind, Visibility};
 
@@ -174,6 +175,9 @@ fn symbol_to_row(sym: &Symbol) -> Row {
     if let Some(ref ret) = sym.return_type {
         row.set("return_type", ret.clone());
     }
+    if !sym.attributes.is_empty() {
+        row.set("attributes", sym.attributes.join(", "));
+    }
     row.set("field_count", sym.fields.len().to_string());
     row.set("param_count", sym.params.len().to_string());
     // Store the display name with parent for nicer output
@@ -341,10 +345,14 @@ fn enrich_row(row: &mut Row, enrichment: &Enrichment, index: &Index) {
     }
 }
 
-/// Filter rows by conditions.
-fn filter_rows(rows: Vec<Row>, conditions: &[Condition]) -> Vec<Row> {
+/// Filter rows by DNF conditions (OR of AND groups).
+fn filter_rows(rows: Vec<Row>, or_groups: &[Vec<Condition>]) -> Vec<Row> {
     rows.into_iter()
-        .filter(|row| conditions.iter().all(|c| matches_condition(row, c)))
+        .filter(|row| {
+            or_groups.iter().any(|group| {
+                group.iter().all(|c| matches_condition(row, c))
+            })
+        })
         .collect()
 }
 
@@ -452,11 +460,39 @@ fn format_text(rows: &[Row], query: &Query) -> String {
         return "No results.".to_string();
     }
 
-    // Compute column widths
+    // Compute path alias if "file" column is present
+    let has_file_col = columns.contains(&"file".to_string());
+    let alias = if has_file_col {
+        let file_paths: Vec<&str> = rows
+            .iter()
+            .filter_map(|row| row.get("file").map(|v| v.as_str()))
+            .collect();
+        path_alias::compute_path_alias(&file_paths)
+    } else {
+        None
+    };
+
+    // Apply alias to file values for display (create shortened copies)
+    let display_rows: Vec<Row> = if let Some(ref a) = alias {
+        rows.iter()
+            .map(|row| {
+                let mut new_row = row.clone();
+                if let Some(file_val) = row.get("file") {
+                    new_row.set("file", a.shorten(file_val));
+                }
+                new_row
+            })
+            .collect()
+    } else {
+        rows.to_vec()
+    };
+
+    // Compute column widths using display rows
     let widths: Vec<usize> = columns
         .iter()
         .map(|col| {
-            rows.iter()
+            display_rows
+                .iter()
                 .map(|row| row.get(col).map(|v| v.len()).unwrap_or(0))
                 .max()
                 .unwrap_or(0)
@@ -466,7 +502,13 @@ fn format_text(rows: &[Row], query: &Query) -> String {
 
     let mut lines = Vec::new();
 
-    for row in rows {
+    // Emit alias header if applicable
+    if let Some(ref a) = alias {
+        lines.push(a.header());
+        lines.push(String::new());
+    }
+
+    for row in &display_rows {
         let parts: Vec<String> = columns
             .iter()
             .zip(widths.iter())

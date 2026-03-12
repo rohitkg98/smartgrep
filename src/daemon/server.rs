@@ -364,6 +364,7 @@ fn dispatch_refs(args: &str, _format: &str, index: &Index) -> Response {
 fn dispatch_context(args: &str, format: &str, project_root: &Path) -> Response {
     use std::path::PathBuf;
     use crate::format::OutputFormat;
+    use crate::parser::java as java_parser;
     use crate::parser::rust as rust_parser;
 
     let file = PathBuf::from(args);
@@ -378,7 +379,13 @@ fn dispatch_context(args: &str, format: &str, project_root: &Path) -> Response {
         Err(e) => return Response::error(format!("Cannot read {}: {}", full_path.display(), e)),
     };
 
-    match rust_parser::parse_file(&file, &source) {
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let result = match ext {
+        "java" => java_parser::parse_file(&file, &source),
+        _ => rust_parser::parse_file(&file, &source),
+    };
+
+    match result {
         Ok(ir) => {
             let output = match OutputFormat::from_str(format) {
                 OutputFormat::Json => crate::format::json::format_symbols(&ir),
@@ -417,11 +424,11 @@ fn start_file_watcher(
             }
             match res {
                 Ok(event) => {
-                    // Only re-index on file modifications/creations/deletions of .rs files
-                    let dominated_by_rs = event.paths.iter().any(|p| {
-                        p.extension().map_or(false, |e| e == "rs")
+                    // Only re-index on file modifications/creations/deletions of .rs/.java files
+                    let dominated_by_source = event.paths.iter().any(|p| {
+                        p.extension().map_or(false, |e| e == "rs" || e == "java")
                     });
-                    if !dominated_by_rs {
+                    if !dominated_by_source {
                         return;
                     }
 

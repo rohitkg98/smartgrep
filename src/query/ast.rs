@@ -7,7 +7,8 @@
 ///   source_kind = "symbols" | "structs" | "functions" | "methods" | "traits"
 ///                | "enums" | "impls" | "consts" | "types" | "modules"
 ///                | "symbol" <name> | "deps" [<name>] | "refs" [<name>]
-///   where_clause = "where" condition ("and" condition)*
+///   where_clause = "where" and_group ("or" and_group)*
+///   and_group   = condition ("and" condition)*
 ///   condition   = field op value
 ///   field       = "name" | "file" | "visibility" | "kind" | "parent"
 ///                | "from" | "to" | "dep_kind"
@@ -18,7 +19,7 @@
 ///   with_stage  = "with" enrichment ("," enrichment)*
 ///   enrichment  = "fields" | "params" | "deps" | "refs" | "signature"
 ///   show_stage  = "show" column ("," column)*
-///   where_stage = "where" condition ("and" condition)*
+///   where_stage = "where" and_group ("or" and_group)*
 ///   sort_stage  = "sort" field ["asc"|"desc"]
 ///   limit_stage = "limit" number
 
@@ -43,22 +44,22 @@ pub enum Source {
     Symbols {
         kind_filter: Option<KindFilter>,
         in_file: Option<String>,
-        where_clause: Vec<Condition>,
+        where_clause: Vec<Vec<Condition>>,
     },
     /// A specific symbol by name: "symbol Foo"
     Symbol {
         name: String,
-        where_clause: Vec<Condition>,
+        where_clause: Vec<Vec<Condition>>,
     },
     /// Dependencies of a symbol: "deps Foo" or all deps: "deps"
     Deps {
         name: Option<String>,
-        where_clause: Vec<Condition>,
+        where_clause: Vec<Vec<Condition>>,
     },
     /// References to a symbol: "refs Foo" or all refs: "refs"
     Refs {
         name: Option<String>,
-        where_clause: Vec<Condition>,
+        where_clause: Vec<Vec<Condition>>,
     },
 }
 
@@ -84,7 +85,7 @@ pub enum Stage {
     /// Select specific columns to show: "show name, file, kind"
     Show { columns: Vec<String> },
     /// Post-filter results: "where field_count > 5"
-    Where { conditions: Vec<Condition> },
+    Where { conditions: Vec<Vec<Condition>> },
     /// Sort results: "sort name asc"
     Sort { field: String, descending: bool },
     /// Limit results: "limit 10"

@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::daemon::client;
+use crate::format::path_alias;
 use crate::format::OutputFormat;
 use crate::index::auto;
 use crate::ir::types::{Symbol, SymbolKind, Visibility};
@@ -35,23 +36,47 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
 
 /// Format symbol detail as text, usable from tests.
 pub fn format_text(symbols: &[&Symbol]) -> String {
+    // Compute path alias across all symbols
+    let file_paths: Vec<&str> = symbols
+        .iter()
+        .map(|s| s.loc.file.to_str().unwrap_or(""))
+        .collect();
+    let alias = path_alias::compute_path_alias(&file_paths);
+
     let mut sections = Vec::new();
 
-    for sym in symbols {
-        sections.push(format_symbol_detail(sym));
+    // Emit alias header if applicable
+    if let Some(ref a) = alias {
+        sections.push(a.header());
     }
 
-    sections.join("\n---\n")
+    for sym in symbols {
+        sections.push(format_symbol_detail(sym, alias.as_ref()));
+    }
+
+    if alias.is_some() {
+        // Header is first, then join detail sections with ---
+        let header = sections.remove(0);
+        format!("{}\n\n{}", header, sections.join("\n---\n"))
+    } else {
+        sections.join("\n---\n")
+    }
 }
 
-fn format_symbol_detail(sym: &Symbol) -> String {
+fn format_symbol_detail(sym: &Symbol, alias: Option<&path_alias::PathAlias>) -> String {
     let mut lines = Vec::new();
 
     // Kind and qualified name
     lines.push(format!("{} {}", sym.kind, sym.qualified_name));
 
     // Location
-    lines.push(format!("  file: {}:{}", sym.loc.file.display(), sym.loc.line));
+    let raw_file = sym.loc.file.to_string_lossy();
+    let file_str = if let Some(a) = alias {
+        a.shorten(&raw_file)
+    } else {
+        raw_file.to_string()
+    };
+    lines.push(format!("  file: {}:{}", file_str, sym.loc.line));
 
     // Visibility
     lines.push(format!("  visibility: {}", visibility_str(&sym.visibility)));

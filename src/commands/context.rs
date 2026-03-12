@@ -5,6 +5,7 @@ use anyhow::Result;
 use crate::daemon::client;
 use crate::format::OutputFormat;
 use crate::index::auto;
+use crate::parser::java as java_parser;
 use crate::parser::rust as rust_parser;
 
 /// Run the `context` command: parse a single file and print its symbols.
@@ -24,7 +25,11 @@ pub fn run(file: &Path, format_str: &str, no_daemon: bool) -> Result<()> {
     let source = std::fs::read_to_string(file)
         .map_err(|e| anyhow::anyhow!("Cannot read {}: {}", file.display(), e))?;
 
-    let ir = rust_parser::parse_file(file, &source)?;
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ir = match ext {
+        "java" => java_parser::parse_file(file, &source)?,
+        _ => rust_parser::parse_file(file, &source)?,
+    };
 
     let output = match OutputFormat::from_str(format_str) {
         OutputFormat::Json => crate::format::json::format_symbols(&ir),

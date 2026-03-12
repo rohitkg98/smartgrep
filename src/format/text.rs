@@ -1,9 +1,28 @@
+use crate::format::path_alias;
 use crate::ir::types::{Ir, Symbol, SymbolKind};
 
 /// Format IR symbols as greppable text output.
 /// Each line: kind\tname\tfile:line\t[extra]
 pub fn format_symbols(ir: &Ir) -> String {
+    if ir.symbols.is_empty() {
+        return String::new();
+    }
+
+    // Collect file paths for alias detection
+    let file_paths: Vec<&str> = ir
+        .symbols
+        .iter()
+        .map(|s| s.loc.file.to_str().unwrap_or(""))
+        .collect();
+    let alias = path_alias::compute_path_alias(&file_paths);
+
     let mut lines = Vec::new();
+
+    // Emit alias header if applicable
+    if let Some(ref a) = alias {
+        lines.push(a.header());
+        lines.push(String::new()); // blank line after header
+    }
 
     // Compute column widths for alignment
     let kind_width = ir
@@ -22,7 +41,13 @@ pub fn format_symbols(ir: &Ir) -> String {
     for sym in &ir.symbols {
         let kind_str = format!("{}", sym.kind);
         let name = display_name(sym);
-        let loc = format!("{}:{}", sym.loc.file.display(), sym.loc.line);
+        let raw_file = sym.loc.file.to_string_lossy();
+        let file_str = if let Some(ref a) = alias {
+            a.shorten(&raw_file)
+        } else {
+            raw_file.to_string()
+        };
+        let loc = format!("{}:{}", file_str, sym.loc.line);
 
         let extra = build_extra(sym);
 

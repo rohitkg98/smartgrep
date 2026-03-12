@@ -1,9 +1,10 @@
 use anyhow::Result;
 
 use crate::daemon::client;
+use crate::format::path_alias;
+use crate::format::OutputFormat;
 use crate::index::auto;
 use crate::ir::types::SymbolKind;
-use crate::format::OutputFormat;
 
 /// Run the `ls` command: list symbols, optionally filtered by kind.
 pub fn run(symbol_type: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
@@ -64,6 +65,13 @@ fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
         return "No symbols found.".to_string();
     }
 
+    // Collect file paths for alias detection
+    let file_paths: Vec<&str> = symbols
+        .iter()
+        .map(|s| s.loc.file.to_str().unwrap_or(""))
+        .collect();
+    let alias = path_alias::compute_path_alias(&file_paths);
+
     let kind_width = symbols
         .iter()
         .map(|s| format!("{}", s.kind).len())
@@ -76,10 +84,23 @@ fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
         .unwrap_or(0);
 
     let mut lines = Vec::new();
+
+    // Emit alias header if applicable
+    if let Some(ref a) = alias {
+        lines.push(a.header());
+        lines.push(String::new());
+    }
+
     for sym in symbols {
         let kind_str = format!("{}", sym.kind);
         let name = display_name(sym);
-        let loc = format!("{}:{}", sym.loc.file.display(), sym.loc.line);
+        let raw_file = sym.loc.file.to_string_lossy();
+        let file_str = if let Some(ref a) = alias {
+            a.shorten(&raw_file)
+        } else {
+            raw_file.to_string()
+        };
+        let loc = format!("{}:{}", file_str, sym.loc.line);
 
         let extra = build_extra(sym);
 

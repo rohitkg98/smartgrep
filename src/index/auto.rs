@@ -4,6 +4,7 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 
 use crate::ir::types::Ir;
+use crate::parser::java as java_parser;
 use crate::parser::rust as rust_parser;
 
 use super::builder;
@@ -13,7 +14,7 @@ use super::types::Index;
 const INDEX_DIR: &str = ".smartgrep";
 const INDEX_FILE: &str = "index.bin";
 
-/// Walk up from `start` looking for a directory containing Cargo.toml.
+/// Walk up from `start` looking for a directory containing Cargo.toml, pom.xml, or build.gradle.
 pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
     let mut current = if start.is_file() {
         start.parent()?.to_path_buf()
@@ -21,7 +22,11 @@ pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
         start.to_path_buf()
     };
     loop {
-        if current.join("Cargo.toml").exists() {
+        if current.join("Cargo.toml").exists()
+            || current.join("pom.xml").exists()
+            || current.join("build.gradle").exists()
+            || current.join("build.gradle.kts").exists()
+        {
             return Some(current);
         }
         if !current.pop() {
@@ -30,7 +35,7 @@ pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Collect all `.rs` source files under `root`, respecting .gitignore.
+/// Collect all `.rs` and `.java` source files under `root`, respecting .gitignore.
 pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let walker = WalkBuilder::new(root)
@@ -53,8 +58,12 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
 
     for entry in walker.flatten() {
         let path = entry.path();
-        if path.is_file() && path.extension().map_or(false, |e| e == "rs") {
-            files.push(path.to_path_buf());
+        if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if ext == "rs" || ext == "java" {
+                    files.push(path.to_path_buf());
+                }
+            }
         }
     }
     files
@@ -115,7 +124,7 @@ pub fn package_name(root: &Path) -> Option<String> {
     None
 }
 
-/// Parse all .rs source files under root into a merged Ir.
+/// Parse all source files under root into a merged Ir.
 pub fn parse_all_sources(root: &Path) -> Result<Ir> {
     let sources = collect_sources(root);
     let mut merged = Ir::default();
@@ -129,7 +138,14 @@ pub fn parse_all_sources(root: &Path) -> Result<Ir> {
         let source = std::fs::read_to_string(src_path)
             .map_err(|e| anyhow::anyhow!("Cannot read {}: {}", src_path.display(), e))?;
 
-        match rust_parser::parse_file(rel_path, &source) {
+        let ext = src_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let result = match ext {
+            "rs" => rust_parser::parse_file(rel_path, &source),
+            "java" => java_parser::parse_file(rel_path, &source),
+            _ => continue,
+        };
+
+        match result {
             Ok(ir) => {
                 merged.symbols.extend(ir.symbols);
                 merged.dependencies.extend(ir.dependencies);

@@ -1,5 +1,6 @@
 pub mod text;
 pub mod json;
+pub mod path_alias;
 
 /// Output format selection.
 pub enum OutputFormat {
