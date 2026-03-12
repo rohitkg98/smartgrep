@@ -1,4 +1,4 @@
-# Benchmark: smartgrep vs Vanilla CLI on spring-io/initializr
+# Benchmark: smartgrep vs Vanilla CLI vs Java LSP on spring-io/initializr
 
 ## Project
 
@@ -23,22 +23,22 @@ Five structural questions were asked of both agents:
 
 ## Results
 
-| Metric | Smartgrep | Vanilla CLI | Delta |
-|--------|-----------|-------------|-------|
-| Tokens | 38,848 | 75,202 | **-48%** |
-| Tool Calls | 8 | 20 | **-60%** |
-| Duration | ~59s | ~85s | **-31%** |
+| Metric | Smartgrep | Vanilla CLI | Java LSP |
+|--------|-----------|-------------|----------|
+| Tokens | 38,848 | 75,202 | 53,955 |
+| Tool Calls | 8 | 20 | 29 |
+| Duration | ~59s | ~85s | ~111s |
 
 ### Per-Question Tool Call Breakdown
 
-| Question | Smartgrep | Vanilla |
-|----------|-----------|---------|
-| Q1: REST controllers & endpoints | 2 | 4 |
-| Q2: Core domain model | 2 | 8 |
-| Q3: Configuration classes | 1 | 3 |
-| Q4: ProjectGenerator deps | 2 | 2 |
-| Q5: ProjectContributor impls | 1 | 3 |
-| **Total** | **8** | **20** |
+| Question | Smartgrep | Vanilla | LSP |
+|----------|-----------|---------|-----|
+| Q1: REST controllers & endpoints | 2 | 4 | 6 |
+| Q2: Core domain model | 2 | 8 | 10 |
+| Q3: Configuration classes | 1 | 3 | 4 |
+| Q4: ProjectGenerator deps | 2 | 2 | 2 |
+| Q5: ProjectContributor impls | 1 | 3 | 3 |
+| **Total** | **8** | **20** | **29** |
 
 ### Key Observations
 
@@ -49,12 +49,32 @@ Five structural questions were asked of both agents:
 - Q3 and Q5 achieved ideal 1-command answers using annotation filtering (`where attributes contains '@Configuration'`) and reference lookup (`refs ProjectContributor`).
 - Path alias mapping reduced output size significantly -- the common prefix `initializr-generator-spring/src/main/java/io/spring/initializr/generator/spring/` was shortened to `[P]` across all results.
 
+### Java LSP Observations
+
+- LSP came in last on all metrics despite being the most semantically rich tool
+- `documentSymbol` is per-file -- Q2 needed 8 separate LSP calls to inspect model files. Smartgrep answered with 1 query.
+- `goToImplementation` returned empty for ProjectContributor -- agent fell back to Grep
+- `hover` returned empty for some fields due to project context issues
+- LSP has no filtering or query language -- you get all symbols from a file and filter manually
+- LSP's strength (semantic type resolution, cross-file navigation) didn't provide value for structural navigation questions
+- The per-file model is fundamentally more expensive than smartgrep's index-wide queries for discovery tasks
+
 ### Scaling Trend
 
 | Codebase | Files | Token Savings | Call Reduction | Speed |
 |----------|-------|---------------|----------------|-------|
 | smartgrep-rs (self, Rust) | 20 | ~0% | -40% | 1.3x slower |
 | spring-io/initializr (Java) | 625 | -48% | -60% | 31% faster |
+
+**3-Way Comparison (spring-io/initializr)**
+
+| Tool | Tokens | Tool Calls | Duration |
+|------|--------|-----------|----------|
+| Smartgrep | 38,848 | 8 | ~59s |
+| Vanilla CLI | 75,202 | 20 | ~85s |
+| Java LSP | 53,955 | 29 | ~111s |
+
+Ranking: Smartgrep > Vanilla CLI > Java LSP for structural codebase navigation.
 
 Smartgrep's advantage grows with codebase size. On small codebases, the per-invocation overhead dominates. On medium-to-large codebases, structural queries dramatically outperform grep+read by eliminating the need to open individual files.
 
@@ -63,6 +83,7 @@ Smartgrep's advantage grows with codebase size. On small codebases, the per-invo
 - Both agents answered the same 5 questions about the codebase.
 - **Smartgrep agent** used only `smartgrep` binary commands (query DSL with OR, attributes filtering, path aliases).
 - **Vanilla agent** used only Grep, Glob, and Read tools.
+- **LSP agent** used LSP tools (documentSymbol, findReferences, goToDefinition, goToImplementation, hover) plus Grep/Glob for discovery.
 - Tokens measured from agent `total_tokens` usage.
 - Duration measured from agent wall clock time.
 - Smartgrep version included: query DSL, OR support, path alias mapping, nested type extraction, attributes filtering, implicit daemon.
