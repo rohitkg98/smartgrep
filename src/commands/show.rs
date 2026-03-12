@@ -1,12 +1,20 @@
 use anyhow::Result;
 
+use crate::daemon::client;
 use crate::format::OutputFormat;
 use crate::index::auto;
 use crate::ir::types::{Symbol, SymbolKind, Visibility};
 
 /// Run the `show` command: display full detail for a named symbol.
-pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>) -> Result<()> {
+pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
     let root = resolve_root(project_root)?;
+
+    // Try daemon first (auto-starts if needed, skipped if --no-daemon)
+    if let Some(output) = client::try_daemon(&root, "show", name, format_str, no_daemon) {
+        println!("{}", output);
+        return Ok(());
+    }
+
     let index = auto::ensure_index(&root)?;
 
     let symbols = index.by_name(name);

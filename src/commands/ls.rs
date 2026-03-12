@@ -1,12 +1,21 @@
 use anyhow::Result;
 
+use crate::daemon::client;
 use crate::index::auto;
 use crate::ir::types::SymbolKind;
 use crate::format::OutputFormat;
 
 /// Run the `ls` command: list symbols, optionally filtered by kind.
-pub fn run(symbol_type: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>) -> Result<()> {
+pub fn run(symbol_type: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
     let root = resolve_root(project_root)?;
+
+    // Try daemon first (auto-starts if needed, skipped if --no-daemon)
+    let args = symbol_type.as_deref().unwrap_or("");
+    if let Some(output) = client::try_daemon(&root, "ls", args, format_str, no_daemon) {
+        println!("{}", output);
+        return Ok(());
+    }
+
     let index = auto::ensure_index(&root)?;
 
     let kind_filter = symbol_type.as_deref().and_then(parse_kind_filter);

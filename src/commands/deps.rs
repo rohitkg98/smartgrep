@@ -1,13 +1,21 @@
 use anyhow::Result;
 
+use crate::daemon::client;
 use crate::index::auto;
 use crate::index::types::Index;
 use crate::ir::types::Dependency;
 use crate::format::OutputFormat;
 
 /// Run the `deps` command: show what a symbol depends on.
-pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>) -> Result<()> {
+pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
     let root = resolve_root(project_root)?;
+
+    // Try daemon first (auto-starts if needed, skipped if --no-daemon)
+    if let Some(output) = client::try_daemon(&root, "deps", name, format_str, no_daemon) {
+        println!("{}", output);
+        return Ok(());
+    }
+
     let index = auto::ensure_index(&root)?;
 
     let results = collect_deps(&index, name);

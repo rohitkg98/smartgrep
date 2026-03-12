@@ -17,6 +17,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub project_root: Option<PathBuf>,
 
+    /// Bypass the background daemon and execute directly
+    #[arg(long, global = true)]
+    pub no_daemon: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -54,5 +58,12 @@ pub enum Command {
     Query {
         /// Query string (e.g. "structs where visibility = public | with fields")
         query: String,
+    },
+    /// Internal: run the daemon server in the foreground (used by auto-start)
+    #[command(hide = true)]
+    RunServer {
+        /// Idle timeout in seconds
+        #[arg(long, default_value = "1800")]
+        idle_timeout: u64,
     },
 }
