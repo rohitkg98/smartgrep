@@ -2,13 +2,12 @@ use anyhow::Result;
 
 use crate::daemon::client;
 use crate::format::path_alias;
-use crate::index::auto;
 use crate::ir::types::Dependency;
 use crate::format::OutputFormat;
 
 /// Run the `refs` command: show what references a given symbol.
 pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
-    let root = resolve_root(project_root)?;
+    let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
     if let Some(output) = client::try_daemon(&root, "refs", name, format_str, no_daemon) {
@@ -16,11 +15,13 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         return Ok(());
     }
 
-    let index = auto::ensure_index(&root)?;
+    let start = std::time::Instant::now();
+    let index = crate::index::auto::ensure_index(&root)?;
 
     let refs = index.refs_to(name);
 
     if refs.is_empty() {
+        super::log_direct(&root, "refs", name, "", start.elapsed().as_millis() as u64);
         println!("No references found for '{}'.", name);
         return Ok(());
     }
@@ -30,17 +31,9 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         OutputFormat::Text => format_text(&refs),
     };
 
+    super::log_direct(&root, "refs", name, &output, start.elapsed().as_millis() as u64);
     println!("{}", output);
     Ok(())
-}
-
-fn resolve_root(project_root: &Option<std::path::PathBuf>) -> Result<std::path::PathBuf> {
-    if let Some(root) = project_root {
-        return Ok(root.clone());
-    }
-    let cwd = std::env::current_dir()?;
-    auto::detect_project_root(&cwd)
-        .ok_or_else(|| anyhow::anyhow!("Could not find Cargo.toml in any parent directory"))
 }
 
 fn format_text(refs: &[&Dependency]) -> String {

@@ -8,7 +8,7 @@ use crate::ir::types::{Symbol, SymbolKind, Visibility};
 
 /// Run the `show` command: display full detail for a named symbol.
 pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
-    let root = resolve_root(project_root)?;
+    let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
     if let Some(output) = client::try_daemon(&root, "show", name, format_str, no_daemon) {
@@ -16,11 +16,13 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         return Ok(());
     }
 
+    let start = std::time::Instant::now();
     let index = auto::ensure_index(&root)?;
 
     let symbols = index.by_name(name);
 
     if symbols.is_empty() {
+        super::log_direct(&root, "show", name, "", start.elapsed().as_millis() as u64);
         eprintln!("No symbol found matching '{}'", name);
         return Ok(());
     }
@@ -30,6 +32,7 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         OutputFormat::Text => format_text(&symbols),
     };
 
+    super::log_direct(&root, "show", name, &output, start.elapsed().as_millis() as u64);
     println!("{}", output);
     Ok(())
 }
@@ -143,13 +146,4 @@ fn visibility_str(vis: &Visibility) -> &'static str {
 
 fn format_json(symbols: &[&Symbol]) -> String {
     serde_json::to_string_pretty(&symbols).unwrap_or_else(|_| "[]".to_string())
-}
-
-fn resolve_root(project_root: &Option<std::path::PathBuf>) -> Result<std::path::PathBuf> {
-    if let Some(root) = project_root {
-        return Ok(root.clone());
-    }
-    let cwd = std::env::current_dir()?;
-    auto::detect_project_root(&cwd)
-        .ok_or_else(|| anyhow::anyhow!("Could not find Cargo.toml in any parent directory"))
 }

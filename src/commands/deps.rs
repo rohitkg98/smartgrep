@@ -9,7 +9,7 @@ use crate::format::OutputFormat;
 
 /// Run the `deps` command: show what a symbol depends on.
 pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
-    let root = resolve_root(project_root)?;
+    let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
     if let Some(output) = client::try_daemon(&root, "deps", name, format_str, no_daemon) {
@@ -17,11 +17,13 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         return Ok(());
     }
 
+    let start = std::time::Instant::now();
     let index = auto::ensure_index(&root)?;
 
     let results = collect_deps(&index, name);
 
     if results.is_empty() {
+        super::log_direct(&root, "deps", name, "", start.elapsed().as_millis() as u64);
         eprintln!("No symbol found matching '{}'", name);
         return Ok(());
     }
@@ -31,6 +33,7 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         OutputFormat::Text => format_text(&results),
     };
 
+    super::log_direct(&root, "deps", name, &output, start.elapsed().as_millis() as u64);
     println!("{}", output);
     Ok(())
 }
@@ -55,15 +58,6 @@ pub fn collect_deps<'a>(index: &'a Index, name: &str) -> Vec<DepsGroup<'a>> {
     }
 
     results
-}
-
-fn resolve_root(project_root: &Option<std::path::PathBuf>) -> Result<std::path::PathBuf> {
-    if let Some(root) = project_root {
-        return Ok(root.clone());
-    }
-    let cwd = std::env::current_dir()?;
-    auto::detect_project_root(&cwd)
-        .ok_or_else(|| anyhow::anyhow!("Could not find Cargo.toml in any parent directory"))
 }
 
 fn format_text(groups: &[DepsGroup]) -> String {

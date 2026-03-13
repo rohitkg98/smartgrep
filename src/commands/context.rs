@@ -22,6 +22,8 @@ pub fn run(file: &Path, format_str: &str, no_daemon: bool) -> Result<()> {
         }
     }
 
+    let start = std::time::Instant::now();
+
     let source = std::fs::read_to_string(file)
         .map_err(|e| anyhow::anyhow!("Cannot read {}: {}", file.display(), e))?;
 
@@ -35,6 +37,14 @@ pub fn run(file: &Path, format_str: &str, no_daemon: bool) -> Result<()> {
         OutputFormat::Json => crate::format::json::format_symbols(&ir),
         OutputFormat::Text => crate::format::text::format_symbols(&ir),
     };
+
+    // Log in direct mode
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(root) = auto::detect_project_root(&cwd) {
+            let args = file.to_string_lossy();
+            super::log_direct(&root, "context", &args, &output, start.elapsed().as_millis() as u64);
+        }
+    }
 
     println!("{}", output);
     Ok(())

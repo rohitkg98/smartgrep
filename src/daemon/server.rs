@@ -16,13 +16,7 @@ use super::protocol::{Request, Response};
 
 /// Entry point for the hidden `run-server` CLI subcommand.
 pub fn run_server_cmd(project_root: &Option<std::path::PathBuf>, idle_timeout: u64) -> anyhow::Result<()> {
-    let root = if let Some(root) = project_root {
-        root.clone()
-    } else {
-        let cwd = std::env::current_dir()?;
-        crate::index::auto::detect_project_root(&cwd)
-            .ok_or_else(|| anyhow::anyhow!("Could not find Cargo.toml in any parent directory"))?
-    };
+    let root = crate::commands::resolve_root(project_root)?;
     run_server(&root, idle_timeout)
 }
 
@@ -153,7 +147,25 @@ fn handle_connection(
         }
     };
 
+    let start = Instant::now();
     let response = dispatch_request(&request, index, project_root, shutdown);
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    // Log the query (skip internal commands like ping/shutdown)
+    if !matches!(request.command.as_str(), "ping" | "shutdown") {
+        let result_count = response
+            .output
+            .as_ref()
+            .map(|o| super::logger::count_results(o))
+            .unwrap_or(0);
+        let entry = super::logger::make_entry(
+            &request.command,
+            &request.args,
+            result_count,
+            elapsed_ms,
+        );
+        super::logger::append(project_root, &entry);
+    }
 
     send_response(&stream, &response)?;
     Ok(())
@@ -240,6 +252,7 @@ fn dispatch_request(
 
 fn dispatch_ls(args: &str, format: &str, index: &Index) -> Response {
     use crate::format::OutputFormat;
+    use crate::commands::ls::parse_kind_filter;
 
     let kind_filter = if args.is_empty() {
         None
@@ -261,23 +274,9 @@ fn dispatch_ls(args: &str, format: &str, index: &Index) -> Response {
     Response::ok(output)
 }
 
-fn parse_kind_filter(s: &str) -> Option<crate::ir::types::SymbolKind> {
-    use crate::ir::types::SymbolKind;
-    match s.to_lowercase().as_str() {
-        "functions" | "function" | "fn" => Some(SymbolKind::Function),
-        "methods" | "method" => Some(SymbolKind::Method),
-        "structs" | "struct" => Some(SymbolKind::Struct),
-        "enums" | "enum" => Some(SymbolKind::Enum),
-        "traits" | "trait" => Some(SymbolKind::Trait),
-        "impls" | "impl" => Some(SymbolKind::Impl),
-        "consts" | "const" => Some(SymbolKind::Const),
-        "types" | "type" => Some(SymbolKind::TypeAlias),
-        "modules" | "module" | "mod" => Some(SymbolKind::Module),
-        _ => None,
-    }
-}
-
 fn format_ls_text(symbols: &[&crate::ir::types::Symbol]) -> String {
+    use crate::commands::ls::display_name;
+
     if symbols.is_empty() {
         return "No symbols found.".to_string();
     }
@@ -298,14 +297,6 @@ fn format_ls_text(symbols: &[&crate::ir::types::Symbol]) -> String {
         ));
     }
     lines.join("\n")
-}
-
-fn display_name(sym: &crate::ir::types::Symbol) -> String {
-    if let Some(ref parent) = sym.parent {
-        format!("{}::{}", parent, sym.name)
-    } else {
-        sym.name.clone()
-    }
 }
 
 fn dispatch_show(args: &str, _format: &str, index: &Index) -> Response {

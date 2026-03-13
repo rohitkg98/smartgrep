@@ -28,6 +28,9 @@ fn main() -> anyhow::Result<()> {
         Command::Query { query } => {
             commands::query::run(&query, &cli.format, &cli.project_root, cli.no_daemon)?;
         }
+        Command::Log { limit, stats } => {
+            commands::log_cmd::run(limit, stats, &cli.project_root)?;
+        }
         Command::RunServer { idle_timeout } => {
             smartgrep::daemon::server::run_server_cmd(&cli.project_root, idle_timeout)?;
         }

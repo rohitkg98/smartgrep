@@ -8,7 +8,7 @@ use crate::ir::types::SymbolKind;
 
 /// Run the `ls` command: list symbols, optionally filtered by kind.
 pub fn run(symbol_type: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
-    let root = resolve_root(project_root)?;
+    let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
     let args = symbol_type.as_deref().unwrap_or("");
@@ -17,6 +17,7 @@ pub fn run(symbol_type: &Option<String>, format_str: &str, project_root: &Option
         return Ok(());
     }
 
+    let start = std::time::Instant::now();
     let index = auto::ensure_index(&root)?;
 
     let kind_filter = symbol_type.as_deref().and_then(parse_kind_filter);
@@ -32,20 +33,12 @@ pub fn run(symbol_type: &Option<String>, format_str: &str, project_root: &Option
         OutputFormat::Text => format_text(&symbols),
     };
 
+    super::log_direct(&root, "ls", args, &output, start.elapsed().as_millis() as u64);
     println!("{}", output);
     Ok(())
 }
 
-fn resolve_root(project_root: &Option<std::path::PathBuf>) -> Result<std::path::PathBuf> {
-    if let Some(root) = project_root {
-        return Ok(root.clone());
-    }
-    let cwd = std::env::current_dir()?;
-    auto::detect_project_root(&cwd)
-        .ok_or_else(|| anyhow::anyhow!("Could not find Cargo.toml in any parent directory"))
-}
-
-fn parse_kind_filter(s: &str) -> Option<SymbolKind> {
+pub fn parse_kind_filter(s: &str) -> Option<SymbolKind> {
     match s.to_lowercase().as_str() {
         "functions" | "function" | "fn" => Some(SymbolKind::Function),
         "methods" | "method" => Some(SymbolKind::Method),
@@ -122,7 +115,7 @@ fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
     lines.join("\n")
 }
 
-fn display_name(sym: &crate::ir::types::Symbol) -> String {
+pub fn display_name(sym: &crate::ir::types::Symbol) -> String {
     if let Some(ref parent) = sym.parent {
         format!("{}::{}", parent, sym.name)
     } else {

@@ -59,6 +59,15 @@ pub enum Command {
         /// Query string (e.g. "structs where visibility = public | with fields")
         query: String,
     },
+    /// Show the query log
+    Log {
+        /// Number of recent entries to show (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Show summary statistics instead of recent entries
+        #[arg(long)]
+        stats: bool,
+    },
     /// Internal: run the daemon server in the foreground (used by auto-start)
     #[command(hide = true)]
     RunServer {
