@@ -1,0 +1,16 @@
+stages:
+  - test
+
+variables:
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+
+test:
+  stage: test
+  image: macos-26-xcode-26
+  tags:
+    - saas-macos-medium-m1
+  before_script:
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - source "$HOME/.cargo/env"
+  script:
+    - cargo test

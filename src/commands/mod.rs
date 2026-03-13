@@ -1,6 +1,7 @@
 pub mod context;
 pub mod deps;
 pub mod index_cmd;
+pub mod install_skill;
 pub mod log_cmd;
 pub mod ls;
 pub mod query;

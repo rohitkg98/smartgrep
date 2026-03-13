@@ -34,6 +34,9 @@ fn main() -> anyhow::Result<()> {
         Command::RunServer { idle_timeout } => {
             smartgrep::daemon::server::run_server_cmd(&cli.project_root, idle_timeout)?;
         }
+        Command::InstallSkill { global } => {
+            commands::install_skill::run(global)?;
+        }
     }
 
     Ok(())

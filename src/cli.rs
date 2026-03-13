@@ -75,4 +75,10 @@ pub enum Command {
         #[arg(long, default_value = "1800")]
         idle_timeout: u64,
     },
+    /// Install the Claude Code skill so agents automatically use smartgrep
+    InstallSkill {
+        /// Install globally (~/.claude/skills/) instead of repo-local (.claude/skills/)
+        #[arg(long)]
+        global: bool,
+    },
 }

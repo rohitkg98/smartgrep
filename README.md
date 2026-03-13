@@ -12,8 +12,29 @@ The query DSL lets agents compose one-shot questions instead of multiple round t
 
 ## Installation
 
+### Homebrew (macOS)
+
 ```bash
+brew tap rohitkg98/smartgrep git@github.com:rohitkg98/homebrew-smartgrep.git
+brew install smartgrep
+```
+
+Then install the Claude Code skill so agents automatically use smartgrep:
+
+```bash
+smartgrep install-skill --global    # all projects (~/.claude/skills/)
+smartgrep install-skill             # current repo only (.claude/skills/)
+```
+
+Requires [Rust/cargo](https://www.rust-lang.org/tools/install) to be installed (builds from source).
+
+### From source
+
+```bash
+git clone git@github.com:rohitkg98/smartgrep.git
+cd smartgrep
 cargo install --path .
+smartgrep install-skill --global
 ```
 
 Requires Rust 1.70+.
@@ -265,9 +286,14 @@ Use `smartgrep` for structural code queries instead of grep/find when exploring 
 - Use batch queries (semicolon-separated) to answer multi-part questions in one call
 ```
 
-## Smartgrep Skill (Coming Soon)
+## Claude Code Skill
 
-A Claude Code skill (`/smartgrep`) is under construction that will make smartgrep a first-class tool for agents. This will allow Claude Code to automatically invoke smartgrep queries as part of its exploration workflow without manual prompting.
+Smartgrep ships with a built-in Claude Code skill. Once installed, Claude automatically uses smartgrep for structural code questions -- no manual prompting needed.
+
+```bash
+smartgrep install-skill --global    # all projects
+smartgrep install-skill             # current repo only
+```
 
 ## Supported languages
 
