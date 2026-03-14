@@ -10,13 +10,13 @@ use crate::parser::java as java_parser;
 use crate::parser::rust as rust_parser;
 
 /// Run the `context` command: parse a single file and print its symbols.
-pub fn run(file: &Path, format_str: &str, no_daemon: bool) -> Result<()> {
+pub fn run(file: &Path, format_str: &str, use_daemon: bool) -> Result<()> {
     // Try daemon first — we need to resolve the project root for the socket path
-    if !no_daemon {
+    if use_daemon {
         let cwd = std::env::current_dir()?;
         if let Some(root) = auto::detect_project_root(&cwd) {
             let args = file.to_string_lossy();
-            if let Some(output) = client::try_daemon(&root, "context", &args, format_str, no_daemon) {
+            if let Some(output) = client::try_daemon(&root, "context", &args, format_str, use_daemon) {
                 println!("{}", output);
                 return Ok(());
             }

@@ -8,11 +8,11 @@ use crate::ir::types::Dependency;
 use crate::format::OutputFormat;
 
 /// Run the `deps` command: show what a symbol depends on.
-pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
+pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, use_daemon: bool) -> Result<()> {
     let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
-    if let Some(output) = client::try_daemon(&root, "deps", name, format_str, no_daemon) {
+    if let Some(output) = client::try_daemon(&root, "deps", name, format_str, use_daemon) {
         println!("{}", output);
         return Ok(());
     }

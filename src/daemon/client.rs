@@ -9,8 +9,14 @@ use anyhow::{Context, Result};
 use super::protocol::{Request, Response};
 
 /// Derive the Unix socket path for a project root.
-/// Uses a hash of the canonical project root path so multiple projects
-/// get independent daemons.
+///
+/// The path encodes both a hash of the project root (so each project gets its
+/// own daemon) and the current binary version (so a version upgrade never
+/// connects to a stale daemon — the new binary simply gets a different socket
+/// path and starts a fresh daemon while the old one idles out).
+///
+/// Format: /tmp/smartgrep-<16-char project hash>-v<version slug>.sock
+/// e.g.   /tmp/smartgrep-a3f1b2c4d5e6f7a8-v0_1_0.sock
 pub fn socket_path(project_root: &Path) -> PathBuf {
     let canonical = project_root
         .canonicalize()
@@ -22,7 +28,9 @@ pub fn socket_path(project_root: &Path) -> PathBuf {
         let result = hasher.finalize();
         format!("{:x}", result)[..16].to_string()
     };
-    PathBuf::from(format!("/tmp/smartgrep-{}.sock", hash))
+    // Sanitize version string for use in a filename (dots → underscores)
+    let version = env!("CARGO_PKG_VERSION").replace('.', "_");
+    PathBuf::from(format!("/tmp/smartgrep-{}-v{}.sock", hash, version))
 }
 
 /// Derive the PID file path for a project root.
@@ -129,19 +137,20 @@ pub fn ensure_daemon(project_root: &Path) -> Result<()> {
     anyhow::bail!("Daemon spawned but not responding after 5 seconds")
 }
 
-/// Try to execute a command via the daemon. If `no_daemon` is true, skips
-/// entirely. Otherwise:
+/// Try to execute a command via the daemon. If `use_daemon` is false (the
+/// default), returns None immediately and the caller executes directly.
+/// When true:
 ///   1. Try connecting to an existing daemon
-///   2. If no daemon, auto-start one silently, then retry
+///   2. If no daemon is running, auto-start one silently, then retry
 ///   3. If anything fails, return None (caller falls back to direct execution)
 pub fn try_daemon(
     project_root: &Path,
     command: &str,
     args: &str,
     format: &str,
-    no_daemon: bool,
+    use_daemon: bool,
 ) -> Option<String> {
-    if no_daemon {
+    if !use_daemon {
         return None;
     }
 
@@ -185,6 +194,9 @@ mod tests {
         assert_eq!(p1, p2);
         assert!(p1.to_string_lossy().starts_with("/tmp/smartgrep-"));
         assert!(p1.to_string_lossy().ends_with(".sock"));
+        // Socket path must embed the version so old daemons are never reused
+        let version_slug = env!("CARGO_PKG_VERSION").replace('.', "_");
+        assert!(p1.to_string_lossy().contains(&format!("-v{}.sock", version_slug)));
     }
 
     #[test]
@@ -204,7 +216,7 @@ mod tests {
     #[test]
     fn test_try_daemon_no_daemon_flag() {
         let root = PathBuf::from("/tmp/nonexistent-project");
-        // With no_daemon=true, should always return None immediately
+        // With use_daemon=false (default), should always return None immediately
         assert!(try_daemon(&root, "ls", "", "text", true).is_none());
     }
 }

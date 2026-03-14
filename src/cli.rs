@@ -17,9 +17,9 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub project_root: Option<PathBuf>,
 
-    /// Bypass the background daemon and execute directly
+    /// Use the background daemon for faster repeated queries (opt-in)
     #[arg(long, global = true)]
-    pub no_daemon: bool,
+    pub daemon: bool,
 
     #[command(subcommand)]
     pub command: Command,

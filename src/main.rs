@@ -8,25 +8,25 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Context { file } => {
-            commands::context::run(&file, &cli.format, cli.no_daemon)?;
+            commands::context::run(&file, &cli.format, cli.daemon)?;
         }
         Command::Ls { symbol_type, in_path } => {
-            commands::ls::run(&symbol_type, &in_path, &cli.format, &cli.project_root, cli.no_daemon)?;
+            commands::ls::run(&symbol_type, &in_path, &cli.format, &cli.project_root, cli.daemon)?;
         }
         Command::Show { name } => {
-            commands::show::run(&name, &cli.format, &cli.project_root, cli.no_daemon)?;
+            commands::show::run(&name, &cli.format, &cli.project_root, cli.daemon)?;
         }
         Command::Deps { name } => {
-            commands::deps::run(&name, &cli.format, &cli.project_root, cli.no_daemon)?;
+            commands::deps::run(&name, &cli.format, &cli.project_root, cli.daemon)?;
         }
         Command::Refs { name } => {
-            commands::refs::run(&name, &cli.format, &cli.project_root, cli.no_daemon)?;
+            commands::refs::run(&name, &cli.format, &cli.project_root, cli.daemon)?;
         }
         Command::Index => {
             commands::index_cmd::run(&cli.project_root)?;
         }
         Command::Query { query } => {
-            commands::query::run(&query, &cli.format, &cli.project_root, cli.no_daemon)?;
+            commands::query::run(&query, &cli.format, &cli.project_root, cli.daemon)?;
         }
         Command::Log { limit, stats } => {
             commands::log_cmd::run(limit, stats, &cli.project_root)?;

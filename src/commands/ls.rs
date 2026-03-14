@@ -8,7 +8,7 @@ use crate::index::auto;
 use crate::ir::types::SymbolKind;
 
 /// Run the `ls` command: list symbols, optionally filtered by kind and file path.
-pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, no_daemon: bool) -> Result<()> {
+pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, use_daemon: bool) -> Result<()> {
     let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
@@ -17,7 +17,7 @@ pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &
         Some(path) => format!("{} --in {}", kind_arg, path),
         None => kind_arg.to_string(),
     };
-    if let Some(output) = client::try_daemon(&root, "ls", &args, format_str, no_daemon) {
+    if let Some(output) = client::try_daemon(&root, "ls", &args, format_str, use_daemon) {
         println!("{}", output);
         return Ok(());
     }

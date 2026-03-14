@@ -13,7 +13,7 @@ use super::store;
 use super::types::Index;
 
 const INDEX_DIR: &str = ".smartgrep";
-const INDEX_FILE: &str = "index.bin";
+const INDEX_FILE: &str = "index.json";
 
 /// Walk up from `start` looking for a directory containing Cargo.toml, pom.xml, or build.gradle.
 pub fn detect_project_root(start: &Path) -> Option<PathBuf> {

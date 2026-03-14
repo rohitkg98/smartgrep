@@ -9,12 +9,12 @@ pub fn run(
     query_str: &str,
     format_str: &str,
     project_root: &Option<std::path::PathBuf>,
-    no_daemon: bool,
+    use_daemon: bool,
 ) -> Result<()> {
     let root = super::resolve_root(project_root)?;
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
-    if let Some(output) = client::try_daemon(&root, "query", query_str, format_str, no_daemon) {
+    if let Some(output) = client::try_daemon(&root, "query", query_str, format_str, use_daemon) {
         println!("{}", output);
         return Ok(());
     }
