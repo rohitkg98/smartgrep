@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
 
+use crate::ir::types::SymbolKind;
+
 use super::ast::*;
 
 /// Parse a query string into a Batch of queries.
@@ -10,7 +12,7 @@ pub fn parse(input: &str) -> Result<Batch> {
     }
 
     // Split on ";" for batch queries, but not inside quoted strings
-    let query_strings = split_batch(input);
+    let query_strings = split_respecting_quotes(input, ';');
     let mut queries = Vec::new();
 
     for qs in &query_strings {
@@ -21,8 +23,8 @@ pub fn parse(input: &str) -> Result<Batch> {
     Ok(Batch { queries })
 }
 
-/// Split on ";" respecting quoted strings.
-fn split_batch(input: &str) -> Vec<String> {
+/// Split a string on a delimiter character, respecting quoted strings.
+fn split_respecting_quotes(input: &str, delimiter: char) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
     let mut in_quote = false;
@@ -36,7 +38,7 @@ fn split_batch(input: &str) -> Vec<String> {
         } else if in_quote && ch == quote_char {
             in_quote = false;
             current.push(ch);
-        } else if !in_quote && ch == ';' {
+        } else if !in_quote && ch == delimiter {
             parts.push(current.clone());
             current.clear();
         } else {
@@ -52,7 +54,7 @@ fn split_batch(input: &str) -> Vec<String> {
 /// Parse a single query (no ";" separators).
 fn parse_query(input: &str) -> Result<Query> {
     // Split on "|" respecting quotes
-    let segments = split_pipe(input);
+    let segments = split_respecting_quotes(input, '|');
     if segments.is_empty() {
         return Err(anyhow!("empty query"));
     }
@@ -66,34 +68,6 @@ fn parse_query(input: &str) -> Result<Query> {
     }
 
     Ok(Query { source, stages })
-}
-
-/// Split on "|" respecting quotes.
-fn split_pipe(input: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_quote = false;
-    let mut quote_char = '"';
-
-    for ch in input.chars() {
-        if !in_quote && (ch == '\'' || ch == '"') {
-            in_quote = true;
-            quote_char = ch;
-            current.push(ch);
-        } else if in_quote && ch == quote_char {
-            in_quote = false;
-            current.push(ch);
-        } else if !in_quote && ch == '|' {
-            parts.push(current.clone());
-            current.clear();
-        } else {
-            current.push(ch);
-        }
-    }
-    if !current.trim().is_empty() {
-        parts.push(current);
-    }
-    parts
 }
 
 /// Tokenize respecting quoted strings.
@@ -149,15 +123,15 @@ fn parse_source(input: &str) -> Result<Source> {
         "symbols" => parse_symbols_source(rest, None),
 
         // Kind-specific: "structs", "functions", etc.
-        "structs" | "struct" => parse_symbols_source(rest, Some(KindFilter::Structs)),
-        "functions" | "function" | "fn" => parse_symbols_source(rest, Some(KindFilter::Functions)),
-        "methods" | "method" => parse_symbols_source(rest, Some(KindFilter::Methods)),
-        "traits" | "trait" => parse_symbols_source(rest, Some(KindFilter::Traits)),
-        "enums" | "enum" => parse_symbols_source(rest, Some(KindFilter::Enums)),
-        "impls" | "impl" => parse_symbols_source(rest, Some(KindFilter::Impls)),
-        "consts" | "const" => parse_symbols_source(rest, Some(KindFilter::Consts)),
-        "types" | "type" => parse_symbols_source(rest, Some(KindFilter::Types)),
-        "modules" | "module" | "mod" => parse_symbols_source(rest, Some(KindFilter::Modules)),
+        "structs" | "struct" => parse_symbols_source(rest, Some(SymbolKind::Struct)),
+        "functions" | "function" | "fn" => parse_symbols_source(rest, Some(SymbolKind::Function)),
+        "methods" | "method" => parse_symbols_source(rest, Some(SymbolKind::Method)),
+        "traits" | "trait" | "interfaces" | "interface" => parse_symbols_source(rest, Some(SymbolKind::Trait)),
+        "enums" | "enum" => parse_symbols_source(rest, Some(SymbolKind::Enum)),
+        "impls" | "impl" => parse_symbols_source(rest, Some(SymbolKind::Impl)),
+        "consts" | "const" => parse_symbols_source(rest, Some(SymbolKind::Const)),
+        "types" | "type" => parse_symbols_source(rest, Some(SymbolKind::TypeAlias)),
+        "modules" | "module" | "mod" => parse_symbols_source(rest, Some(SymbolKind::Module)),
 
         // "symbol <name>" — specific symbol lookup
         "symbol" => {
@@ -192,15 +166,15 @@ fn parse_source(input: &str) -> Result<Source> {
         }
 
         _ => Err(anyhow!(
-            "unknown source '{}'. Expected: symbols, structs, functions, methods, traits, enums, \
-             impls, consts, types, modules, symbol, deps, refs",
+            "unknown source '{}'. Expected: symbols, structs, functions, methods, traits, \
+             interfaces, enums, impls, consts, types, modules, symbol, deps, refs",
             keyword
         )),
     }
 }
 
 /// Parse a symbols source with optional "in 'file'" and "where" clauses.
-fn parse_symbols_source(tokens: &[String], kind_filter: Option<KindFilter>) -> Result<Source> {
+fn parse_symbols_source(tokens: &[String], kind_filter: Option<SymbolKind>) -> Result<Source> {
     let mut i = 0;
     let mut in_file = None;
     let mut where_clause = Vec::new();
@@ -440,7 +414,7 @@ mod tests {
         assert_eq!(
             q.source,
             Source::Symbols {
-                kind_filter: Some(KindFilter::Structs),
+                kind_filter: Some(SymbolKind::Struct),
                 in_file: None,
                 where_clause: vec![],
             }
@@ -454,7 +428,7 @@ mod tests {
         let q = &batch.queries[0];
         match &q.source {
             Source::Symbols { kind_filter, where_clause, .. } => {
-                assert_eq!(*kind_filter, Some(KindFilter::Functions));
+                assert_eq!(*kind_filter, Some(SymbolKind::Function));
                 // One AND group with 2 conditions
                 assert_eq!(where_clause.len(), 1);
                 assert_eq!(where_clause[0].len(), 2);
@@ -554,11 +528,11 @@ mod tests {
 
     #[test]
     fn parse_show_stage() {
-        let batch = parse("deps Config | show from, to, kind").unwrap();
+        let batch = parse("deps Config | show from, to, dep_kind").unwrap();
         let q = &batch.queries[0];
         match &q.stages[0] {
             Stage::Show { columns } => {
-                assert_eq!(columns, &["from", "to", "kind"]);
+                assert_eq!(columns, &["from", "to", "dep_kind"]);
             }
             _ => panic!("expected Show stage"),
         }

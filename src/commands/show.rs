@@ -27,7 +27,7 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         return Ok(());
     }
 
-    let output = match OutputFormat::from_str(format_str) {
+    let output = match format_str.parse::<OutputFormat>().unwrap() {
         OutputFormat::Json => format_json(&symbols),
         OutputFormat::Text => format_text(&symbols),
     };

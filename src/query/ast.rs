@@ -1,3 +1,5 @@
+use crate::ir::types::SymbolKind;
+
 /// AST for the smartgrep query DSL.
 ///
 /// Grammar (informal):
@@ -42,7 +44,7 @@ pub enum Source {
     /// All symbols, optionally filtered by kind.
     /// "symbols", "structs", "functions", etc.
     Symbols {
-        kind_filter: Option<KindFilter>,
+        kind_filter: Option<SymbolKind>,
         in_file: Option<String>,
         where_clause: Vec<Vec<Condition>>,
     },
@@ -61,20 +63,6 @@ pub enum Source {
         name: Option<String>,
         where_clause: Vec<Vec<Condition>>,
     },
-}
-
-/// Symbol kind filter for the source clause.
-#[derive(Debug, Clone, PartialEq)]
-pub enum KindFilter {
-    Functions,
-    Methods,
-    Structs,
-    Enums,
-    Traits,
-    Impls,
-    Consts,
-    Types,
-    Modules,
 }
 
 /// A pipeline stage that transforms query results.
@@ -96,6 +84,7 @@ pub enum Stage {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Enrichment {
     Fields,
+    Methods,
     Params,
     Deps,
     Refs,

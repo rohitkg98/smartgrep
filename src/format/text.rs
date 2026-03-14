@@ -70,7 +70,7 @@ pub fn format_symbols(ir: &Ir) -> String {
     lines.join("\n")
 }
 
-fn display_name(sym: &Symbol) -> String {
+pub fn display_name(sym: &Symbol) -> String {
     if let Some(ref parent) = sym.parent {
         format!("{}::{}", parent, sym.name)
     } else {
@@ -78,7 +78,7 @@ fn display_name(sym: &Symbol) -> String {
     }
 }
 
-fn build_extra(sym: &Symbol) -> String {
+pub fn build_extra(sym: &Symbol) -> String {
     match sym.kind {
         SymbolKind::Function | SymbolKind::Method => {
             let params: Vec<String> = sym

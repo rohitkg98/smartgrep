@@ -61,10 +61,30 @@ smartgrep query "deps where from contains 'parser' | show from, to, dep_kind"
 smartgrep context src/main.rs       # structural overview of a file
 smartgrep ls functions              # list all functions
 smartgrep ls structs                # list all structs
+smartgrep ls interfaces             # list all interfaces (Go) / traits (Rust)
+smartgrep ls structs --in src/ir/   # list structs in specific path
 smartgrep show <name>               # detail for a symbol
 smartgrep deps <name>               # what does X depend on?
 smartgrep refs <name>               # what references X?
 ```
+
+### Large codebases (100+ files): always scope your queries
+On large projects, bare `ls` commands dump thousands of symbols. Always filter:
+```bash
+# BAD: floods context with 500KB+ of output
+smartgrep ls functions
+
+# GOOD: scope with --in or use query with file filtering
+smartgrep ls functions --in go/services/
+smartgrep query "structs in 'go/services/' | with fields"
+smartgrep query "interfaces where file contains 'common/' | with fields"
+smartgrep query "functions where name starts_with 'New' and file contains 'services/'"
+```
+
+### Language notes
+- **Go interfaces** → use `interfaces` or `traits` (both work)
+- **Go method receivers** → stored in `parent` field (e.g., `methods where parent = MultiGateway`)
+- **Generated code** → filter out with `where file not contains '.pb.go'`
 
 ### When to use smartgrep vs file reading
 - **Use smartgrep**: finding symbols, understanding structure, exploring dependencies, listing functions/structs

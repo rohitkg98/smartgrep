@@ -32,10 +32,13 @@ pub enum Command {
         /// Path to the file to analyze
         file: PathBuf,
     },
-    /// List symbols (functions, structs, traits, etc.)
+    /// List symbols (functions, structs, traits, interfaces, etc.)
     Ls {
         /// Symbol type to filter by
         symbol_type: Option<String>,
+        /// Filter by file path substring (e.g. --in go/services/)
+        #[arg(long = "in")]
+        in_path: Option<String>,
     },
     /// Show detail for a named symbol
     Show {

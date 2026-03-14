@@ -28,7 +28,7 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         return Ok(());
     }
 
-    let output = match OutputFormat::from_str(format_str) {
+    let output = match format_str.parse::<OutputFormat>().unwrap() {
         OutputFormat::Json => format_json(&results),
         OutputFormat::Text => format_text(&results),
     };
@@ -60,7 +60,7 @@ pub fn collect_deps<'a>(index: &'a Index, name: &str) -> Vec<DepsGroup<'a>> {
     results
 }
 
-fn format_text(groups: &[DepsGroup]) -> String {
+pub fn format_text(groups: &[DepsGroup]) -> String {
     if groups.iter().all(|g| g.deps.is_empty()) {
         return "No dependencies found.".to_string();
     }

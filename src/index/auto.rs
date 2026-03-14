@@ -4,6 +4,7 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 
 use crate::ir::types::Ir;
+use crate::parser::go as go_parser;
 use crate::parser::java as java_parser;
 use crate::parser::rust as rust_parser;
 
@@ -26,6 +27,7 @@ pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
             || current.join("pom.xml").exists()
             || current.join("build.gradle").exists()
             || current.join("build.gradle.kts").exists()
+            || current.join("go.mod").exists()
         {
             return Some(current);
         }
@@ -60,7 +62,7 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_file() {
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ext == "rs" || ext == "java" {
+                if ext == "rs" || ext == "java" || ext == "go" {
                     files.push(path.to_path_buf());
                 }
             }
@@ -142,6 +144,7 @@ pub fn parse_all_sources(root: &Path) -> Result<Ir> {
         let result = match ext {
             "rs" => rust_parser::parse_file(rel_path, &source),
             "java" => java_parser::parse_file(rel_path, &source),
+            "go" => go_parser::parse_file(rel_path, &source),
             _ => continue,
         };
 

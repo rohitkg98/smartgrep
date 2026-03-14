@@ -371,7 +371,7 @@ fn query_deps_of_symbol() {
     let rows = run_query("deps Bar");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get("to").unwrap(), "Baz");
-    assert_eq!(rows[0].get("kind").unwrap(), "trait_impl");
+    assert_eq!(rows[0].get("dep_kind").unwrap(), "trait_impl");
 }
 
 #[test]
@@ -382,7 +382,7 @@ fn query_all_deps() {
 
 #[test]
 fn query_deps_with_where() {
-    let rows = run_query("deps where kind = type_ref");
+    let rows = run_query("deps where dep_kind = type_ref");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get("from").unwrap(), "crate::beta::foo");
 }
@@ -396,18 +396,18 @@ fn query_refs_to_symbol() {
 
 #[test]
 fn query_refs_with_where() {
-    let rows = run_query("refs Bar | where kind = call");
+    let rows = run_query("refs Bar | where dep_kind = call");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get("from").unwrap(), "crate::commands::run::run");
 }
 
 #[test]
 fn query_deps_show_columns() {
-    let rows = run_query("deps Bar | show from, to, kind");
+    let rows = run_query("deps Bar | show from, to, dep_kind");
     assert_eq!(rows.len(), 1);
     assert!(rows[0].get("from").is_some());
     assert!(rows[0].get("to").is_some());
-    assert!(rows[0].get("kind").is_some());
+    assert!(rows[0].get("dep_kind").is_some());
     assert!(rows[0].get("file").is_none());
 }
 
@@ -557,7 +557,7 @@ fn query_or_backward_compat_and_only() {
 #[test]
 fn query_or_deps_source() {
     // OR in deps where clause
-    let rows = run_query("deps where kind = type_ref or kind = call");
+    let rows = run_query("deps where dep_kind = type_ref or dep_kind = call");
     assert_eq!(rows.len(), 2);
 }
 

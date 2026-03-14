@@ -4,6 +4,7 @@ use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
+use crate::parser::common::{find_child_by_kind, loc, node_text};
 
 /// Derive a qualified package prefix from a Java file.
 /// If the file contains a `package` declaration, we use that.
@@ -111,30 +112,6 @@ fn extract_items(
 // Utility helpers
 // ---------------------------------------------------------------------------
 
-fn loc(node: &Node, path: &Path) -> SourceLoc {
-    let start = node.start_position();
-    SourceLoc {
-        file: path.to_path_buf(),
-        line: start.row + 1,
-        col: start.column + 1,
-    }
-}
-
-fn node_text<'a>(node: &Node, source: &'a str) -> &'a str {
-    node.utf8_text(source.as_bytes()).unwrap_or("")
-}
-
-fn find_child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            if child.kind() == kind {
-                return Some(child);
-            }
-        }
-    }
-    None
-}
-
 fn get_name(node: &Node, source: &str) -> Option<String> {
     node.child_by_field_name("name")
         .map(|n| node_text(&n, source).to_string())
@@ -228,19 +205,11 @@ fn extract_class(
     extract_superclass_deps(node, source, path, &qualified_name, ir);
     extract_super_interfaces_deps(node, source, path, &qualified_name, ir);
 
-    ir.symbols.push(Symbol {
-        name: name.clone(),
-        qualified_name: qualified_name.clone(),
-        kind: SymbolKind::Struct,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: outer_name.map(|s| s.to_string()),
-        attributes: attrs,
-        fields,
-        params: vec![],
-        return_type: None,
-    });
+    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), SymbolKind::Struct, loc(node, path), vis);
+    sym.parent = outer_name.map(|s| s.to_string());
+    sym.attributes = attrs;
+    sym.fields = fields;
+    ir.symbols.push(sym);
 
     // Extract methods and constructors from class body
     if let Some(body) = find_child_by_kind(node, "class_body") {
@@ -278,19 +247,10 @@ fn extract_interface(
         name.clone()
     };
 
-    ir.symbols.push(Symbol {
-        name: display_name,
-        qualified_name: qualified_name.clone(),
-        kind: SymbolKind::Trait,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: outer_name.map(|s| s.to_string()),
-        attributes: attrs,
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    });
+    let mut sym = Symbol::new(display_name, qualified_name.clone(), SymbolKind::Trait, loc(node, path), vis);
+    sym.parent = outer_name.map(|s| s.to_string());
+    sym.attributes = attrs;
+    ir.symbols.push(sym);
 
     // Extract interface methods
     if let Some(body) = find_child_by_kind(node, "interface_body") {
@@ -324,19 +284,10 @@ fn extract_enum(
     // Extract super interfaces for enum
     extract_super_interfaces_deps(node, source, path, &qualified_name, ir);
 
-    ir.symbols.push(Symbol {
-        name: name.clone(),
-        qualified_name: qualified_name.clone(),
-        kind: SymbolKind::Enum,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: outer_name.map(|s| s.to_string()),
-        attributes: attrs,
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    });
+    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), SymbolKind::Enum, loc(node, path), vis);
+    sym.parent = outer_name.map(|s| s.to_string());
+    sym.attributes = attrs;
+    ir.symbols.push(sym);
 
     // Extract methods from enum body declarations
     if let Some(body) = find_child_by_kind(node, "enum_body") {
@@ -387,19 +338,12 @@ fn extract_record(
     // Extract super interfaces for record
     extract_super_interfaces_deps(node, source, path, &qualified_name, ir);
 
-    ir.symbols.push(Symbol {
-        name: name.clone(),
-        qualified_name: qualified_name.clone(),
-        kind: SymbolKind::Struct,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: outer_name.map(|s| s.to_string()),
-        attributes: attrs,
-        fields,
-        params: components,
-        return_type: None,
-    });
+    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), SymbolKind::Struct, loc(node, path), vis);
+    sym.parent = outer_name.map(|s| s.to_string());
+    sym.attributes = attrs;
+    sym.fields = fields;
+    sym.params = components;
+    ir.symbols.push(sym);
 
     // Extract methods from record body (uses class_body)
     if let Some(body) = find_child_by_kind(node, "class_body") {
@@ -508,19 +452,13 @@ fn extract_method(
     let return_type = extract_return_type(node, source);
     let sig = build_method_signature(node, source);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Method,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: Some(sig),
-        parent: Some(parent_name.to_string()),
-        attributes: attrs,
-        fields: vec![],
-        params,
-        return_type,
-    })
+    let mut sym = Symbol::new(name, qualified_name, SymbolKind::Method, loc(node, path), vis);
+    sym.signature = Some(sig);
+    sym.parent = Some(parent_name.to_string());
+    sym.attributes = attrs;
+    sym.params = params;
+    sym.return_type = return_type;
+    Some(sym)
 }
 
 fn extract_constructor(
@@ -542,19 +480,12 @@ fn extract_constructor(
     let params = extract_formal_params(node, source);
     let sig = build_method_signature(node, source);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Method,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: Some(sig),
-        parent: Some(parent_name.to_string()),
-        attributes: attrs,
-        fields: vec![],
-        params,
-        return_type: None,
-    })
+    let mut sym = Symbol::new(name, qualified_name, SymbolKind::Method, loc(node, path), vis);
+    sym.signature = Some(sig);
+    sym.parent = Some(parent_name.to_string());
+    sym.attributes = attrs;
+    sym.params = params;
+    Some(sym)
 }
 
 // ---------------------------------------------------------------------------

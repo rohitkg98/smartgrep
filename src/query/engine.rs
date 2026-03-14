@@ -80,16 +80,15 @@ fn resolve_source(source: &Source, index: &Index) -> Result<Vec<Row>> {
                     })
                     .collect()
             } else if let Some(ref kind) = kind_filter {
-                let sk = kind_filter_to_symbol_kind(kind);
-                index.by_kind(&sk)
+                index.by_kind(kind)
             } else {
                 index.symbols.iter().collect()
             };
 
             // Apply kind filter if both in_file and kind_filter are set
             let symbols: Vec<&Symbol> = if in_file.is_some() && kind_filter.is_some() {
-                let sk = kind_filter_to_symbol_kind(kind_filter.as_ref().unwrap());
-                symbols.into_iter().filter(|s| s.kind == sk).collect()
+                let sk = kind_filter.as_ref().unwrap();
+                symbols.into_iter().filter(|s| s.kind == *sk).collect()
             } else {
                 symbols
             };
@@ -194,7 +193,6 @@ fn dep_to_row(dep: &Dependency) -> Row {
     let mut row = Row::new();
     row.set("from", dep.from_qualified.clone());
     row.set("to", dep.to_name.clone());
-    row.set("kind", format!("{}", dep.kind));
     row.set("dep_kind", format!("{}", dep.kind));
     row.set("file", dep.loc.file.to_string_lossy().to_string());
     row.set("line", dep.loc.line.to_string());
@@ -276,6 +274,34 @@ fn enrich_row(row: &mut Row, enrichment: &Enrichment, index: &Index) {
                         row.set("fields", fields_str.join(", "));
                         row.set("field_count", sym.fields.len().to_string());
                     }
+                }
+            }
+        }
+
+        Enrichment::Methods => {
+            let name = row.get("name").cloned();
+            if let Some(ref n) = name {
+                let methods: Vec<&Symbol> = index
+                    .symbols
+                    .iter()
+                    .filter(|s| {
+                        s.kind == SymbolKind::Method
+                            && s.parent.as_deref() == Some(n.as_str())
+                    })
+                    .collect();
+                if !methods.is_empty() {
+                    let methods_str: Vec<String> = methods
+                        .iter()
+                        .map(|m| {
+                            if let Some(ref sig) = m.signature {
+                                format!("{}{}", m.name, sig.strip_prefix(&m.name).unwrap_or(sig))
+                            } else {
+                                m.name.clone()
+                            }
+                        })
+                        .collect();
+                    row.set("methods", methods_str.join(", "));
+                    row.set("method_count", methods.len().to_string());
                 }
             }
         }
@@ -539,7 +565,7 @@ fn determine_columns(rows: &[Row], query: &Query) -> Vec<String> {
     let is_dep_row = sample.get("from").is_some() && sample.get("to").is_some();
 
     if is_dep_row {
-        let mut cols = vec!["kind".to_string(), "from".to_string(), "to".to_string()];
+        let mut cols = vec!["dep_kind".to_string(), "from".to_string(), "to".to_string()];
         cols.push("file".to_string());
         cols.push("line".to_string());
         cols
@@ -548,36 +574,26 @@ fn determine_columns(rows: &[Row], query: &Query) -> Vec<String> {
         cols.push("file".to_string());
         cols.push("line".to_string());
 
-        // Add enrichment columns if present
-        if sample.get("fields").is_some() {
+        // Add enrichment columns if present (check any row, not just first)
+        let has_col = |col: &str| rows.iter().any(|r| r.get(col).is_some());
+        if has_col("fields") {
             cols.push("fields".to_string());
         }
-        if sample.get("params").is_some() {
+        if has_col("methods") {
+            cols.push("methods".to_string());
+        }
+        if has_col("params") {
             cols.push("params".to_string());
         }
-        if sample.get("signature").is_some() && !cols.contains(&"signature".to_string()) {
+        if has_col("signature") && !cols.contains(&"signature".to_string()) {
             cols.push("signature".to_string());
         }
-        if sample.get("deps").is_some() {
+        if has_col("deps") {
             cols.push("deps".to_string());
         }
-        if sample.get("refs").is_some() {
+        if has_col("refs") {
             cols.push("refs".to_string());
         }
         cols
-    }
-}
-
-fn kind_filter_to_symbol_kind(kind: &KindFilter) -> SymbolKind {
-    match kind {
-        KindFilter::Functions => SymbolKind::Function,
-        KindFilter::Methods => SymbolKind::Method,
-        KindFilter::Structs => SymbolKind::Struct,
-        KindFilter::Enums => SymbolKind::Enum,
-        KindFilter::Traits => SymbolKind::Trait,
-        KindFilter::Impls => SymbolKind::Impl,
-        KindFilter::Consts => SymbolKind::Const,
-        KindFilter::Types => SymbolKind::TypeAlias,
-        KindFilter::Modules => SymbolKind::Module,
     }
 }

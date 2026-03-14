@@ -26,7 +26,7 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
         return Ok(());
     }
 
-    let output = match OutputFormat::from_str(format_str) {
+    let output = match format_str.parse::<OutputFormat>().unwrap() {
         OutputFormat::Json => format_json(&refs),
         OutputFormat::Text => format_text(&refs),
     };
@@ -36,7 +36,7 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
     Ok(())
 }
 
-fn format_text(refs: &[&Dependency]) -> String {
+pub fn format_text(refs: &[&Dependency]) -> String {
     // Collect file paths for alias detection
     let file_paths: Vec<&str> = refs
         .iter()

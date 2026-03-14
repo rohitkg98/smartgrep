@@ -10,8 +10,8 @@ fn main() -> anyhow::Result<()> {
         Command::Context { file } => {
             commands::context::run(&file, &cli.format, cli.no_daemon)?;
         }
-        Command::Ls { symbol_type } => {
-            commands::ls::run(&symbol_type, &cli.format, &cli.project_root, cli.no_daemon)?;
+        Command::Ls { symbol_type, in_path } => {
+            commands::ls::run(&symbol_type, &in_path, &cli.format, &cli.project_root, cli.no_daemon)?;
         }
         Command::Show { name } => {
             commands::show::run(&name, &cli.format, &cli.project_root, cli.no_daemon)?;

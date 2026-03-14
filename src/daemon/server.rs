@@ -254,49 +254,38 @@ fn dispatch_ls(args: &str, format: &str, index: &Index) -> Response {
     use crate::format::OutputFormat;
     use crate::commands::ls::parse_kind_filter;
 
-    let kind_filter = if args.is_empty() {
-        None
+    // Parse args: "kind_type --in path" or just "kind_type"
+    let (kind_str, in_path) = if let Some(pos) = args.find("--in ") {
+        let kind_part = args[..pos].trim();
+        let path_part = args[pos + 5..].trim();
+        (kind_part, if path_part.is_empty() { None } else { Some(path_part) })
     } else {
-        parse_kind_filter(args)
+        (args.trim(), None)
     };
 
-    let symbols: Vec<_> = if let Some(ref kind) = kind_filter {
+    let kind_filter = if kind_str.is_empty() {
+        None
+    } else {
+        parse_kind_filter(kind_str)
+    };
+
+    let mut symbols: Vec<_> = if let Some(ref kind) = kind_filter {
         index.by_kind(kind)
     } else {
         index.symbols.iter().collect()
     };
 
-    let output = match OutputFormat::from_str(format) {
+    // Filter by file path substring if --in is specified
+    if let Some(path) = in_path {
+        symbols.retain(|s| s.loc.file.to_string_lossy().contains(path));
+    }
+
+    let output = match format.parse::<OutputFormat>().unwrap() {
         OutputFormat::Json => serde_json::to_string_pretty(&symbols).unwrap_or_else(|_| "[]".to_string()),
-        OutputFormat::Text => format_ls_text(&symbols),
+        OutputFormat::Text => crate::commands::ls::format_text(&symbols),
     };
 
     Response::ok(output)
-}
-
-fn format_ls_text(symbols: &[&crate::ir::types::Symbol]) -> String {
-    use crate::commands::ls::display_name;
-
-    if symbols.is_empty() {
-        return "No symbols found.".to_string();
-    }
-
-    let kind_width = symbols.iter().map(|s| format!("{}", s.kind).len()).max().unwrap_or(0);
-    let name_width = symbols.iter().map(|s| display_name(s).len()).max().unwrap_or(0);
-
-    let mut lines = Vec::new();
-    for sym in symbols {
-        let kind_str = format!("{}", sym.kind);
-        let name = display_name(sym);
-        let loc = format!("{}:{}", sym.loc.file.display(), sym.loc.line);
-
-        lines.push(format!(
-            "{:<kw$}  {:<nw$}  {}",
-            kind_str, name, loc,
-            kw = kind_width, nw = name_width,
-        ));
-    }
-    lines.join("\n")
 }
 
 fn dispatch_show(args: &str, _format: &str, index: &Index) -> Response {
@@ -313,28 +302,7 @@ fn dispatch_deps(args: &str, _format: &str, index: &Index) -> Response {
     if results.is_empty() {
         return Response::ok(format!("No symbol found matching '{}'", args));
     }
-
-    // Use a simple text format for deps
-    let mut lines = Vec::new();
-    for group in &results {
-        if results.len() > 1 {
-            lines.push(format!("# {}", group.qualified_name));
-        }
-        if group.deps.is_empty() {
-            if results.len() > 1 {
-                lines.push("  (no dependencies)".to_string());
-            } else {
-                lines.push("No dependencies found.".to_string());
-            }
-            continue;
-        }
-        for dep in &group.deps {
-            let kind_str = format!("{}", dep.kind);
-            let loc = format!("{}:{}", dep.loc.file.display(), dep.loc.line);
-            lines.push(format!("{}  {}  {}", kind_str, dep.to_name, loc));
-        }
-    }
-    Response::ok(lines.join("\n"))
+    Response::ok(crate::commands::deps::format_text(&results))
 }
 
 fn dispatch_refs(args: &str, _format: &str, index: &Index) -> Response {
@@ -342,19 +310,13 @@ fn dispatch_refs(args: &str, _format: &str, index: &Index) -> Response {
     if refs.is_empty() {
         return Response::ok(format!("No references found for '{}'.", args));
     }
-
-    let mut lines = Vec::new();
-    for dep in &refs {
-        let kind_str = format!("{}", dep.kind);
-        let loc = format!("{}:{}", dep.loc.file.display(), dep.loc.line);
-        lines.push(format!("{}  {}  {}", kind_str, dep.from_qualified, loc));
-    }
-    Response::ok(lines.join("\n"))
+    Response::ok(crate::commands::refs::format_text(&refs))
 }
 
 fn dispatch_context(args: &str, format: &str, project_root: &Path) -> Response {
     use std::path::PathBuf;
     use crate::format::OutputFormat;
+    use crate::parser::go as go_parser;
     use crate::parser::java as java_parser;
     use crate::parser::rust as rust_parser;
 
@@ -372,13 +334,18 @@ fn dispatch_context(args: &str, format: &str, project_root: &Path) -> Response {
 
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
     let result = match ext {
+        "go" => go_parser::parse_file(&file, &source),
         "java" => java_parser::parse_file(&file, &source),
-        _ => rust_parser::parse_file(&file, &source),
+        "rs" => rust_parser::parse_file(&file, &source),
+        _ => return Response::error(format!(
+            "Unsupported file type '.{}'. smartgrep supports .rs, .java, and .go files.",
+            ext
+        )),
     };
 
     match result {
         Ok(ir) => {
-            let output = match OutputFormat::from_str(format) {
+            let output = match format.parse::<OutputFormat>().unwrap() {
                 OutputFormat::Json => crate::format::json::format_symbols(&ir),
                 OutputFormat::Text => crate::format::text::format_symbols(&ir),
             };
@@ -417,7 +384,7 @@ fn start_file_watcher(
                 Ok(event) => {
                     // Only re-index on file modifications/creations/deletions of .rs/.java files
                     let dominated_by_source = event.paths.iter().any(|p| {
-                        p.extension().map_or(false, |e| e == "rs" || e == "java")
+                        p.extension().map_or(false, |e| e == "rs" || e == "java" || e == "go")
                     });
                     if !dominated_by_source {
                         return;

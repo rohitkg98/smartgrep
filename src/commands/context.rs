@@ -5,6 +5,7 @@ use anyhow::Result;
 use crate::daemon::client;
 use crate::format::OutputFormat;
 use crate::index::auto;
+use crate::parser::go as go_parser;
 use crate::parser::java as java_parser;
 use crate::parser::rust as rust_parser;
 
@@ -29,11 +30,16 @@ pub fn run(file: &Path, format_str: &str, no_daemon: bool) -> Result<()> {
 
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
     let ir = match ext {
+        "go" => go_parser::parse_file(file, &source)?,
         "java" => java_parser::parse_file(file, &source)?,
-        _ => rust_parser::parse_file(file, &source)?,
+        "rs" => rust_parser::parse_file(file, &source)?,
+        _ => return Err(anyhow::anyhow!(
+            "Unsupported file type '.{}'. smartgrep supports .rs, .java, and .go files.",
+            ext
+        )),
     };
 
-    let output = match OutputFormat::from_str(format_str) {
+    let output = match format_str.parse::<OutputFormat>().unwrap() {
         OutputFormat::Json => crate::format::json::format_symbols(&ir),
         OutputFormat::Text => crate::format::text::format_symbols(&ir),
     };

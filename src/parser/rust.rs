@@ -4,6 +4,7 @@ use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
+use crate::parser::common::{loc, node_text};
 
 /// Derive a qualified module prefix from a file path.
 /// `src/index/builder.rs` -> `crate::index::builder`
@@ -137,19 +138,6 @@ fn extract_items(
     }
 }
 
-fn loc(node: &Node, path: &Path) -> SourceLoc {
-    let start = node.start_position();
-    SourceLoc {
-        file: path.to_path_buf(),
-        line: start.row + 1,
-        col: start.column + 1,
-    }
-}
-
-fn node_text<'a>(node: &Node, source: &'a str) -> &'a str {
-    node.utf8_text(source.as_bytes()).unwrap_or("")
-}
-
 fn find_child_by_field<'a>(node: &'a Node<'a>, field: &str) -> Option<Node<'a>> {
     node.child_by_field_name(field)
 }
@@ -203,19 +191,12 @@ fn extract_function(
 
     let sig = build_function_signature(node, source);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: Some(sig),
-        parent: parent.map(String::from),
-        attributes: vec![],
-        fields: vec![],
-        params,
-        return_type,
-    })
+    let mut sym = Symbol::new(name, qualified_name, kind, loc(node, path), vis);
+    sym.signature = Some(sig);
+    sym.parent = parent.map(String::from);
+    sym.params = params;
+    sym.return_type = return_type;
+    Some(sym)
 }
 
 fn build_function_signature(node: &Node, source: &str) -> String {
@@ -264,19 +245,9 @@ fn extract_struct(node: &Node, source: &str, path: &Path, prefix: &str) -> Optio
     let qualified_name = format!("{}::{}", prefix, name);
     let fields = extract_struct_fields(node, source);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Struct,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: None,
-        attributes: vec![],
-        fields,
-        params: vec![],
-        return_type: None,
-    })
+    let mut sym = Symbol::new(name, qualified_name, SymbolKind::Struct, loc(node, path), vis);
+    sym.fields = fields;
+    Some(sym)
 }
 
 fn extract_struct_fields(node: &Node, source: &str) -> Vec<Field> {
@@ -308,19 +279,7 @@ fn extract_enum(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Enum,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: None,
-        attributes: vec![],
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    })
+    Some(Symbol::new(name, qualified_name, SymbolKind::Enum, loc(node, path), vis))
 }
 
 fn extract_trait(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
@@ -328,19 +287,7 @@ fn extract_trait(node: &Node, source: &str, path: &Path, prefix: &str) -> Option
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Trait,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: None,
-        attributes: vec![],
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    })
+    Some(Symbol::new(name, qualified_name, SymbolKind::Trait, loc(node, path), vis))
 }
 
 fn extract_impl(
@@ -366,19 +313,9 @@ fn extract_impl(
         format!("impl {}", type_name)
     };
 
-    ir.symbols.push(Symbol {
-        name: impl_name,
-        qualified_name: qualified_name.clone(),
-        kind: SymbolKind::Impl,
-        loc: loc(node, path),
-        visibility: Visibility::Private,
-        signature: None,
-        parent: None,
-        attributes: outer_attrs.to_vec(),
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    });
+    let mut sym = Symbol::new(impl_name, qualified_name.clone(), SymbolKind::Impl, loc(node, path), Visibility::Private);
+    sym.attributes = outer_attrs.to_vec();
+    ir.symbols.push(sym);
 
     if let Some(tr) = &trait_name {
         ir.dependencies.push(Dependency {
@@ -453,19 +390,7 @@ fn extract_const(node: &Node, source: &str, path: &Path, prefix: &str) -> Option
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Const,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: None,
-        attributes: vec![],
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    })
+    Some(Symbol::new(name, qualified_name, SymbolKind::Const, loc(node, path), vis))
 }
 
 fn extract_type_alias(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
@@ -473,19 +398,7 @@ fn extract_type_alias(node: &Node, source: &str, path: &Path, prefix: &str) -> O
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::TypeAlias,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: None,
-        attributes: vec![],
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    })
+    Some(Symbol::new(name, qualified_name, SymbolKind::TypeAlias, loc(node, path), vis))
 }
 
 fn extract_mod(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
@@ -493,19 +406,7 @@ fn extract_mod(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<S
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol {
-        name,
-        qualified_name,
-        kind: SymbolKind::Module,
-        loc: loc(node, path),
-        visibility: vis,
-        signature: None,
-        parent: None,
-        attributes: vec![],
-        fields: vec![],
-        params: vec![],
-        return_type: None,
-    })
+    Some(Symbol::new(name, qualified_name, SymbolKind::Module, loc(node, path), vis))
 }
 
 #[cfg(test)]
