@@ -1,32 +1,31 @@
 # smartgrep
 
-Structural code navigation CLI built for coding agents. Parses source files via tree-sitter, extracts structural symbols (functions, classes, interfaces, structs, traits, enums, records, methods, impls, consts, modules), and presents them as compact, greppable text output.
+Structural code navigation for coding agents. Parses source files via tree-sitter and extracts symbols — functions, classes, structs, interfaces, methods, enums — into a queryable index.
 
-Like an IDE's symbol browser, but for CLI agents.
+The queries are designed to be **readable by humans and generatable by LLMs**, unlike grep regexes.
 
-## Philosophy
+```bash
+# grep — terse, brittle, requires regex expertise to read
+grep -rn "^pub\s\+fn\|pub async fn" src/commands/ | grep -v "//\|mod.rs"
 
-Agents waste tokens reading entire files when they only need to know what's defined where. Smartgrep gives low-token structural queries that return just the symbols, signatures, dependencies, and references an agent needs.
+# smartgrep — reads like a sentence
+smartgrep query "functions where visibility = public and file contains 'commands/'"
+```
 
-The query DSL lets agents compose one-shot questions instead of multiple round trips. One query can filter by kind, constrain by file or visibility, enrich with fields/params/deps, select columns, sort, and limit -- all in a single invocation. The grammar is designed to be fluent for LLMs to generate.
+When Claude uses smartgrep, you can see exactly what it's looking for at a glance.
+
+---
 
 ## Installation
 
 ### Homebrew (macOS)
 
 ```bash
-brew tap rohitkg98/smartgrep git@github.com:rohitkg98/homebrew-smartgrep.git
+brew tap rohitkg98/smartgrep https://github.com/rohitkg98/homebrew-smartgrep
 brew install smartgrep
 ```
 
-Then install the Claude Code skill so agents automatically use smartgrep:
-
-```bash
-smartgrep install-skill --global    # all projects (~/.claude/skills/)
-smartgrep install-skill             # current repo only (.claude/skills/)
-```
-
-Requires [Rust/cargo](https://www.rust-lang.org/tools/install) to be installed (builds from source).
+Requires [Rust/cargo](https://www.rust-lang.org/tools/install) (builds from source).
 
 ### From source
 
@@ -34,273 +33,161 @@ Requires [Rust/cargo](https://www.rust-lang.org/tools/install) to be installed (
 git clone git@github.com:rohitkg98/smartgrep.git
 cd smartgrep
 cargo install --path .
-smartgrep install-skill --global
 ```
 
 Requires Rust 1.70+.
 
-## Quick start
+---
+
+## Giving smartgrep to Claude
+
+Install as a Claude Code skill so Claude automatically uses smartgrep for structural questions — no prompting needed:
 
 ```bash
-# Structural summary of a file
-smartgrep context src/main.rs
-smartgrep context src/controllers/UserController.java
-
-# List all functions
-smartgrep ls functions
-
-# List all classes
-smartgrep ls classes
-
-# List all structs
-smartgrep ls structs
-
-# Detail for a specific symbol
-smartgrep show Config
-smartgrep show UserController
-
-# What does Config depend on?
-smartgrep deps Config
-
-# What references UserService?
-smartgrep refs UserService
-
-# Force re-index (usually implicit -- queries trigger indexing automatically)
-smartgrep index
-
-# Run a composable query
-smartgrep query "structs where visibility = public | with fields | limit 10"
-smartgrep query "classes where file contains 'controllers/' | with methods"
+smartgrep install-skill --global    # all projects (~/.claude/skills/)
+smartgrep install-skill             # this repo only (.claude/skills/)
 ```
 
-Global flags:
-- `--format text|json` -- output format (default: text)
-- `--no-color` -- disable colored output
-- `--project-root <path>` -- set the project root directory
-
-## Query DSL
-
-The `query` command accepts a composable DSL that pipes a source through transformation stages. This is the main feature.
-
-### Grammar
-
-```
-batch       = query (";" query)*
-query       = source ("|" stage)*
-source      = source_kind [in_clause] [where_clause]
-source_kind = "symbols" | "structs" | "functions" | "methods" | "traits"
-            | "enums" | "impls" | "consts" | "types" | "modules"
-            | "classes" | "interfaces" | "records"
-            | "symbol" <name> | "deps" [<name>] | "refs" [<name>]
-in_clause   = "in" '<file_path>'
-where_clause = "where" condition (("and" | "or") condition)*
-condition   = field op value
-op          = "=" | "!=" | "contains" | ">" | "<" | ">=" | "<="
-            | "starts_with" | "ends_with"
-stage       = with | show | where | sort | limit
-with        = "with" enrichment ("," enrichment)*
-enrichment  = "fields" | "params" | "deps" | "refs" | "signature"
-show        = "show" column ("," column)*
-sort        = "sort" field ["asc" | "desc"]
-limit       = "limit" <number>
-```
-
-### Sources
-
-| Source | Description |
-|---|---|
-| `symbols` | All symbols in the index |
-| `structs` | All structs |
-| `classes` | All classes |
-| `interfaces` | All interfaces |
-| `records` | All records |
-| `functions` | All functions (also: `fn`) |
-| `methods` | All methods |
-| `traits` | All traits |
-| `enums` | All enums |
-| `impls` | All impl blocks |
-| `consts` | All constants |
-| `types` | All type aliases |
-| `modules` | All modules (also: `mod`) |
-| `symbol Foo` | Look up a specific symbol by name |
-| `deps Foo` | Dependencies of symbol Foo |
-| `deps` | All dependencies |
-| `refs Foo` | References to symbol Foo |
-| `refs` | All references |
-| `symbols in 'src/ir/types.rs'` | All symbols in a specific file |
-| `structs in 'src/index/'` | Structs in files matching a path substring |
-| `classes in 'src/controllers/'` | Classes in files matching a path substring |
-
-### Where clauses
-
-Filter results with `where`. Combine conditions with `and` or `or`.
-
-**Fields for symbol rows:** `name`, `file`, `visibility`, `kind`, `parent`, `attributes`, `field_count`, `param_count`
-
-**Fields for dependency rows:** `from`, `to`, `kind`, `dep_kind`, `file`, `line`
-
-**Operators:**
-
-| Operator | Aliases | Description |
-|---|---|---|
-| `=` | `==`, `is` | Equals (case-insensitive) |
-| `!=` | `is_not` | Not equals |
-| `contains` | `has`, `includes`, `~` | Substring match |
-| `>` | | Greater than (numeric) |
-| `<` | | Less than (numeric) |
-| `>=` | | Greater than or equal |
-| `<=` | | Less than or equal |
-| `starts_with` | `startswith` | Prefix match |
-| `ends_with` | `endswith` | Suffix match |
-
-### Pipeline stages
-
-Stages are separated by `|` and applied left to right.
-
-**`with`** -- Enrich rows with additional data:
-- `fields` -- struct/class/enum fields (adds `fields`, `field_count` columns)
-- `params` -- function/method parameters (adds `params`, `param_count` columns)
-- `deps` -- dependencies (adds `deps`, `dep_count` columns)
-- `refs` -- references (adds `refs`, `ref_count` columns)
-- `signature` -- full signature (also: `sig`)
-
-**`show`** -- Select specific columns for output:
-```
-| show name, file, kind
-```
-
-**`where`** -- Post-filter after enrichment:
-```
-| where field_count > 5
-```
-
-**`sort`** -- Sort results:
-```
-| sort name asc
-| sort field_count desc
-```
-
-**`limit`** -- Cap the number of results:
-```
-| limit 10
-```
-
-### Batch queries
-
-Run multiple queries in one invocation by separating with `;`:
-
-```bash
-smartgrep query "structs; functions where file contains 'commands/'"
-smartgrep query "classes where file contains 'service/'; methods where parent = UserController"
-```
-
-Each query's results are printed under a `# Query N` header.
-
-### Path alias mapping
-
-In text output, long file paths are automatically shortened using alias prefixes. For example, `src/controllers/UserController.java` may appear as `[P1] UserController.java`, with a legend mapping `[P1]` to its full directory. This keeps table output compact without losing information.
-
-### Example queries
-
-```bash
-# --- Rust examples ---
-
-# List all public structs
-smartgrep query "structs where visibility = public"
-
-# Find functions in a specific directory
-smartgrep query "functions where file contains 'commands/'"
-
-# Get a struct's fields
-smartgrep query "symbol Config | with fields"
-
-# Structs with more than 5 fields
-smartgrep query "structs | with fields | where field_count > 5"
-
-# All function signatures in a file
-smartgrep query "functions in 'src/main.rs' | with signature | show name, signature"
-
-# All traits with their dependencies
-smartgrep query "traits | with deps"
-
-# Methods on a specific type
-smartgrep query "methods where parent = Config"
-
-# --- Java examples ---
-
-# List all classes in a package directory
-smartgrep query "classes where file contains 'controllers/'"
-
-# Find Spring REST controllers
-smartgrep query "classes where attributes contains '@RestController'"
-
-# Find all POST and GET endpoints
-smartgrep query "methods where attributes contains '@PostMapping' or attributes contains '@GetMapping'"
-
-# Show all methods on a service class
-smartgrep query "methods where parent = UserService | with signature | show name, signature"
-
-# Find classes that implement a specific interface
-smartgrep query "classes where attributes contains 'implements OrderRepository'"
-
-# List all enums and records in a project
-smartgrep query "enums; records"
-
-# --- General examples (work across languages) ---
-
-# What does a specific symbol depend on?
-smartgrep query "deps Config | show from, to, kind"
-
-# Who references Index?
-smartgrep query "refs Index | show from, to, kind"
-
-# All public functions sorted by name
-smartgrep query "functions where visibility = public | sort name asc"
-
-# Top 5 structs/classes by field count
-smartgrep query "symbols where kind = struct or kind = class | with fields | sort field_count desc | limit 5"
-
-# Find symbols whose name starts with "parse"
-smartgrep query "symbols where name starts_with parse"
-
-# Functions that take parameters, show just the signatures
-smartgrep query "functions | with params | where param_count > 0 | show name, signature"
-
-# Batch: get structs and their fields + all enums in one shot
-smartgrep query "structs | with fields; enums | with fields"
-```
-
-## Configuring your CLAUDE.md
-
-Add this to your project's `CLAUDE.md` to instruct Claude Code to use smartgrep for structural code queries:
+Or add to your project's `CLAUDE.md` manually:
 
 ```markdown
 ## Code Navigation
 
-Use `smartgrep` for structural code queries instead of grep/find when exploring code structure.
+Use `smartgrep` for structural code queries instead of grep/find.
 
 - `smartgrep query "<dsl>"` for composable one-shot structural questions
 - `smartgrep context <file>` for a structural overview of a file
 - `smartgrep query "symbol <Name> | with deps, refs"` to understand a symbol's role
-- Prefer smartgrep over reading entire files when you only need structure, signatures, or dependency info
 - Use batch queries (semicolon-separated) to answer multi-part questions in one call
 ```
 
-## Claude Code Skill
+---
 
-Smartgrep ships with a built-in Claude Code skill. Once installed, Claude automatically uses smartgrep for structural code questions -- no manual prompting needed.
+## Watching what Claude does
+
+Every smartgrep call is logged. Run this to see Claude's recent queries:
 
 ```bash
-smartgrep install-skill --global    # all projects
-smartgrep install-skill             # current repo only
+smartgrep log
 ```
+
+Example output:
+
+```
+ts                   command  args                                                      results  ms
+2026-03-14 10:42:11  query    classes where attributes contains '@RestController'            4  12
+2026-03-14 10:42:18  query    methods where parent = UserController | with signature         7   9
+2026-03-14 10:42:31  query    symbol OrderService | with deps, refs                          1   8
+2026-03-14 10:43:02  query    functions where file contains 'commands/' | with params        6  11
+```
+
+Each line is one tool call Claude made. Compare these to what you'd have had to decipher with grep:
+
+```bash
+# What Claude asked for (smartgrep)              # What you'd have with grep
+classes where attributes contains '@RestController'   grep -rn "@RestController" src/ | grep "^class\|^public class"
+methods where parent = UserController                 grep -rn "UserController" src/ | grep "^\s\+public\|void\|String"
+symbol OrderService | with deps, refs                 grep -rn "OrderService" src/ | grep "import\|extends\|new OrderService"
+```
+
+The smartgrep query column tells you exactly what Claude was looking for, in plain language.
+
+---
+
+## Query DSL
+
+The `query` command is the main feature. Queries compose a source, optional filters, and pipeline stages:
+
+```
+source [where conditions] [| stage] [| stage] ...
+```
+
+### Readability in practice
+
+Side by side with grep, for the same questions:
+
+| What you want to know | grep | smartgrep |
+|---|---|---|
+| All public functions | `grep -rn "^pub fn\|pub async fn" src/` | `functions where visibility = public` |
+| Spring REST controllers | `grep -rn "@RestController" src/ \| grep "class "` | `classes where attributes contains '@RestController'` |
+| Methods on UserService | `grep -rn "UserService" src/ \| grep "def \|public "` | `methods where parent = UserService` |
+| Structs with 5+ fields | *(requires reading each file)* | `structs \| with fields \| where field_count > 5` |
+| What does Config depend on | `grep -rn "Config" src/ \| grep "use \|import \|new "` | `symbol Config \| with deps` |
+
+The grep column requires knowing the language's syntax, writing a correct regex, and filtering noise. The smartgrep column reads like a question.
+
+### Sources
+
+```
+symbols / structs / classes / interfaces / records / functions / methods
+traits / enums / impls / consts / types / modules
+symbol <name>          -- single symbol lookup
+deps [<name>]          -- dependencies (all, or for one symbol)
+refs [<name>]          -- references (all, or to one symbol)
+<source> in '<path>'   -- restrict to files matching a path substring
+```
+
+### Filters
+
+```
+where <field> <op> <value> [and|or ...]
+```
+
+| Field | Applies to |
+|---|---|
+| `name`, `file`, `visibility`, `kind`, `parent` | symbols |
+| `attributes` | symbols with annotations/decorators |
+| `field_count`, `param_count` | after `with fields` / `with params` |
+| `from`, `to`, `dep_kind` | dependency rows |
+
+| Operator | Meaning |
+|---|---|
+| `=` / `is` | equals (case-insensitive) |
+| `!=` | not equals |
+| `contains` | substring match |
+| `starts_with` / `ends_with` | prefix / suffix |
+| `>` `<` `>=` `<=` | numeric comparison |
+
+### Pipeline stages
+
+Stages follow `|` and apply left to right:
+
+- `with fields` — add struct/class/enum field list and count
+- `with params` — add function/method parameter list and count
+- `with deps` — add outbound dependencies
+- `with refs` — add inbound references
+- `with signature` — add full type signature
+- `show col1, col2` — select specific output columns
+- `where field_count > 5` — filter after enrichment
+- `sort field asc|desc` — sort results
+- `limit N` — cap output
+
+### Batch queries
+
+Separate queries with `;` to run multiple in one call:
+
+```bash
+smartgrep query "structs | with fields; enums | with fields"
+smartgrep query "classes where file contains 'service/'; methods where parent = UserController"
+```
+
+Results print under `# Query 1`, `# Query 2` headers.
+
+### Path aliases
+
+Long file paths in text output are automatically shortened. `src/main/java/com/example/catalog/controller/ProductController.java` becomes `[P]controller/ProductController.java`, with a `[paths]` legend at the top. JSON output always keeps full paths.
+
+---
 
 ## Supported languages
 
-- **Rust** -- full support via tree-sitter-rust
-- **Java** -- full support via tree-sitter-java
+- **Rust** — full support via tree-sitter-rust
+- **Java** — full support via tree-sitter-java
+- **Go** — full support via tree-sitter-go
 
-More languages coming via tree-sitter grammars. The IR layer is language-agnostic -- adding a language means writing one parser, with no changes to the index builder or query engine.
+Adding a language means writing one parser. The IR layer and query engine are language-agnostic.
+
+---
 
 ## Architecture
 
@@ -308,12 +195,10 @@ More languages coming via tree-sitter grammars. The IR layer is language-agnosti
 Parser (tree-sitter) --> IR --> Index Builder --> Index --> Commands / Query Engine
 ```
 
-Three layers, two contracts:
+- **Parser** (`src/parser/`) — language-specific, produces the IR
+- **IR** (`src/ir/types.rs`) — language-agnostic symbol and dependency maps
+- **Index** (`src/index/types.rs`) — queryable, with lookup tables for fast symbol resolution
 
-- **Parser** (`src/parser/`) -- Language-specific tree-sitter parsers produce the IR. One parser per language (e.g., `rust.rs`, `java.rs`).
-- **IR** (`src/ir/types.rs`) -- Language-agnostic symbol and dependency maps. The contract between parsers and the index builder.
-- **Index** (`src/index/types.rs`) -- Queryable structure with lookup tables. The contract between the index builder and commands/query engine.
+Auto-indexing: queries trigger indexing implicitly. The index rebuilds when source files change.
 
-The query DSL (`src/query/`) parses query strings into an AST, then the engine executes them against the index.
-
-Auto-indexing: queries trigger indexing implicitly. The index is rebuilt when source files change.
+See [AGENTS_README.md](AGENTS_README.md) for the agent-targeted reference.

@@ -2,6 +2,8 @@
 
 An always-loaded skill. When a user asks about code structure, symbols, dependencies, or architecture, use `smartgrep` instead of multiple grep/read calls.
 
+Full agent reference: `AGENTS_README.md` in this repo (if available) or see inline guide below.
+
 ## When to use smartgrep
 
 Use it when the user asks about:
