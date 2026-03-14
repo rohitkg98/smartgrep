@@ -37,6 +37,9 @@ fn main() -> anyhow::Result<()> {
         Command::InstallSkill { global } => {
             commands::install_skill::run(global)?;
         }
+        Command::Update => {
+            commands::update::run()?;
+        }
     }
 
     Ok(())

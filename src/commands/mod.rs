@@ -7,6 +7,7 @@ pub mod ls;
 pub mod query;
 pub mod refs;
 pub mod show;
+pub mod update;
 
 use std::path::{Path, PathBuf};
 

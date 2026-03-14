@@ -18,14 +18,19 @@ When Claude uses smartgrep, you can see exactly what it's looking for at a glanc
 
 ## Installation
 
-### Homebrew (macOS)
-
-```bash
-brew tap rohitkg98/smartgrep https://github.com/rohitkg98/homebrew-smartgrep
-brew install smartgrep
+```sh
+curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | sh
 ```
 
-Requires [Rust/cargo](https://www.rust-lang.org/tools/install) (builds from source).
+Installs the latest release binary for your platform (macOS arm64/x86_64, Linux x86_64/arm64). No Rust required.
+
+### Update
+
+```sh
+smartgrep update
+```
+
+Fetches and runs the install script to replace the binary in-place.
 
 ### From source
 

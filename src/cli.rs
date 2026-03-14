@@ -84,4 +84,6 @@ pub enum Command {
         #[arg(long)]
         global: bool,
     },
+    /// Update smartgrep to the latest release
+    Update,
 }
