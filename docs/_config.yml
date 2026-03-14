@@ -1,0 +1,10 @@
+title: smartgrep
+description: Structural code navigation for agents
+theme: minima
+
+plugins:
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: true
