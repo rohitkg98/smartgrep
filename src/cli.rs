@@ -86,4 +86,22 @@ pub enum Command {
     },
     /// Update smartgrep to the latest release
     Update,
+    /// Project-wide structural map: files grouped by directory with their public symbols
+    Map {
+        /// Filter to files matching a path substring
+        #[arg(long = "in")]
+        in_path: Option<String>,
+        /// Include private symbols (default: public and crate-visible only)
+        #[arg(long)]
+        all: bool,
+        /// Limit directory nesting depth (e.g. --depth 1 shows only top-level dirs)
+        #[arg(long)]
+        depth: Option<usize>,
+        /// Include auto-generated files (default: excluded by path heuristics)
+        #[arg(long)]
+        include_generated: bool,
+        /// Show per-file symbol lists instead of per-directory summary
+        #[arg(long)]
+        symbols: bool,
+    },
 }

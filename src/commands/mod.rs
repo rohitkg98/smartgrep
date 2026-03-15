@@ -4,6 +4,7 @@ pub mod index_cmd;
 pub mod install_skill;
 pub mod log_cmd;
 pub mod ls;
+pub mod map;
 pub mod query;
 pub mod refs;
 pub mod show;

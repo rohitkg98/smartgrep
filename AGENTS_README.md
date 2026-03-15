@@ -10,6 +10,8 @@ You have access to `smartgrep`, a structural code navigation tool. Read this bef
 
 It is **not a text search tool**. It is a **structural search tool**. It understands code, not bytes.
 
+**Supported languages: Rust, Java, Go.** smartgrep only indexes `.rs`, `.go`, and `.java` files. It has no knowledge of `.md`, `.yaml`, `.toml`, `.json`, `.py`, `.ts`, or any other file type. For those, handle them as you normally would without smartgrep — using smartgrep for code does not mean ignoring everything else.
+
 ---
 
 ## Why use it instead of grep
@@ -42,6 +44,9 @@ If not found, fall back to grep/read. Do not assume it is installed.
 smartgrep context <file>         # structural overview of one file
 smartgrep ls <kind>              # list all symbols of a kind
 smartgrep ls <kind> --in <path>  # scoped to a directory
+smartgrep map                    # files grouped by directory with their public symbols
+smartgrep map --in <path>        # subtree only
+smartgrep map --all              # include private symbols
 smartgrep show <name>            # full detail for one symbol
 smartgrep deps <name>            # what does <name> depend on?
 smartgrep refs <name>            # what references <name>?
@@ -50,6 +55,8 @@ smartgrep query "<dsl>"          # composable query — use this for most questi
 ```
 
 **Prefer `query` over the individual commands.** It is more expressive and handles compound questions in a single call.
+
+**Use `map` to orient yourself on a new codebase.** It gives a directory-tree view with symbols inline — one call instead of running `context` on every file.
 
 ---
 
@@ -167,7 +174,29 @@ smartgrep query "classes where attributes contains '@RestController' | show name
 smartgrep query "symbols where file contains 'src/index/'; refs Index | show from, dep_kind"
 ```
 
-### Pattern 6 — Cross-language queries
+### Pattern 6 — Project orientation with `map`
+
+Use `map` as your first call on an unfamiliar codebase. It answers "what is in this project?" without reading a single file:
+
+```bash
+# Full project overview
+smartgrep map
+
+# Narrow to a subsystem you're about to modify
+smartgrep map --in src/commands/
+
+# Include private symbols when you need the full picture
+smartgrep map --all --in src/index/
+
+# Machine-readable for programmatic processing
+smartgrep map --format json | jq '.[].dir'
+```
+
+`map` groups files by directory and lists their public symbols inline — equivalent to running `smartgrep context` on every file, but in one call with far fewer tokens.
+
+---
+
+### Pattern 7 — Cross-language queries
 
 Same DSL works across Rust, Java, and Go:
 
@@ -199,13 +228,16 @@ smartgrep ls functions
 smartgrep query "functions where file contains 'handlers/' | show name, file, signature | limit 20"
 ```
 
-**Don't use `context` on multiple files in a loop.** Use a query instead:
+**Don't use `context` on multiple files in a loop.** Use `map` or a query instead:
 
 ```bash
 # Slow, token-expensive
 for f in src/commands/*.rs; do smartgrep context $f; done
 
-# Fast, one call
+# Fast, one call — directory overview with symbols
+smartgrep map --in src/commands/
+
+# Or query for a specific projection
 smartgrep query "symbols where file contains 'src/commands/' | show name, kind, file"
 ```
 

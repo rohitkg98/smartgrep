@@ -1,6 +1,8 @@
 # smartgrep
 
-Structural code navigation for coding agents. Parses source files via tree-sitter and extracts symbols — functions, classes, structs, interfaces, methods, enums — into a queryable index.
+Your code is a database. Why query it with full-text search?
+
+Agents using grep have to regex their way to understanding — pattern-matching raw text, parsing noise, running multiple commands to answer one question. smartgrep parses source files via tree-sitter, extracts symbols into a structured index, and lets agents query the code the same way you'd query a database.
 
 The queries are designed to be **readable by humans and generatable by LLMs**, unlike grep regexes.
 

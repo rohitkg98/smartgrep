@@ -40,6 +40,9 @@ fn main() -> anyhow::Result<()> {
         Command::Update => {
             commands::update::run()?;
         }
+        Command::Map { in_path, all, depth, include_generated, symbols } => {
+            commands::map::run(&in_path, all, depth, include_generated, symbols, &cli.format, &cli.project_root)?;
+        }
     }
 
     Ok(())

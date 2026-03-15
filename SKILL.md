@@ -4,16 +4,26 @@ An always-loaded skill. When a user asks about code structure, symbols, dependen
 
 Full agent reference: `AGENTS_README.md` in this repo (if available) or see inline guide below.
 
+## Supported languages
+
+smartgrep parses **Rust, Java, and Go** only. It has no knowledge of other file types.
+
+**Use smartgrep for:** `.rs`, `.go`, `.java` files — structural questions about code.
+
+**For everything else** (`.md`, `.yaml`, `.toml`, `.json`, `.py`, `.ts`, `.js`, Dockerfiles, config files, documentation) — handle as you normally would without smartgrep. It has no knowledge of these file types.
+
+Using smartgrep for code does not mean ignoring non-code files. Documentation and config often contain context the code index cannot surface.
+
 ## When to use smartgrep
 
 Use it when the user asks about:
-- Code structure, architecture, or organization
+- Code structure, architecture, or organization in Rust, Java, or Go files
 - Finding classes, functions, interfaces, enums, records, structs, traits
 - Dependencies between symbols or what references a symbol
-- Exploring a new or unfamiliar codebase
+- Exploring an unfamiliar Rust/Java/Go codebase
 - Finding implementations of an interface or trait
 - Listing endpoints, services, controllers, consumers
-- Any structural question that would otherwise need multiple grep/read calls
+- Any structural question that would otherwise need multiple grep/read calls across `.rs`, `.go`, or `.java` files
 
 ## Detecting availability
 
@@ -30,12 +40,54 @@ Prefer ONE compound `smartgrep query` over multiple grep+read calls. It is more 
 ## Quick commands
 
 ```bash
+smartgrep map                     # project layout: dir summary with symbol counts + dep arrows
+smartgrep map --in src/foo/       # subtree only
+smartgrep map --depth 1           # top-level directories only
+smartgrep map --symbols           # expand to per-file symbol lists
+smartgrep map --include-generated # show auto-generated files (excluded by default)
 smartgrep ls structs              # list all structs/classes
 smartgrep ls functions            # list all functions
 smartgrep show <name>             # detail for a symbol
 smartgrep deps <name>             # what does X depend on?
 smartgrep refs <name>             # what references X?
 smartgrep context path/to/file    # structural summary of a file
+```
+
+## How to explore an unfamiliar codebase
+
+Think like an IDE: start wide, zoom in, then query specifics. Never dump everything at once.
+
+### Step 1 — Gauge project size
+```bash
+smartgrep map --depth 1
+```
+Read the header line: `N files · M symbols`. This tells you whether to use broad or targeted queries next.
+
+- **Small (<30 files):** `smartgrep map` gives the full picture in one call.
+- **Medium (30–100 files):** `smartgrep map` then drill into interesting dirs with `--in`.
+- **Large (100+ files):** Start with `--depth 1` or `--depth 2` to orient, then use targeted `query` commands. **Do not run bare `smartgrep map` or `smartgrep ls` — the output will be too large to be useful.**
+
+### Step 2 — Read the dep arrows
+The `→` column in `map` output shows which directories each directory imports from. Use this to understand the layer structure before reading any code:
+```
+src/commands/   → src/daemon, src/format, src/index, src/ir
+src/index/      → src/ir
+src/ir/         (no outgoing — this is a leaf/core layer)
+```
+This tells you the dependency order without opening a single file.
+
+### Step 3 — Zoom into interesting areas
+```bash
+smartgrep map --in src/commands/          # structure of one subsystem
+smartgrep map --symbols --in src/index/   # file-level symbol listing for a dir
+smartgrep query "structs in 'src/index/' | with fields"  # data shapes
+```
+
+### Step 4 — Query specifics
+```bash
+smartgrep show <SymbolName>               # full detail for a symbol
+smartgrep query "symbol Foo | with deps, refs"  # relationships
+smartgrep query "functions where file contains 'src/api' | show name, signature"
 ```
 
 ## Query DSL
@@ -67,13 +119,32 @@ Semicolon-separated: `"structs | limit 5 ; functions | limit 5"`
 
 | User question | Query |
 |---|---|
+| What's in this project? | `smartgrep map --depth 1` first, then zoom |
+| What's the architecture? | `smartgrep map` — read the `→` dep arrows per directory |
+| What's in this subsystem? | `smartgrep map --in src/foo/` |
 | What are the REST endpoints? | `smartgrep query "methods where attributes contains '@PostMapping' or attributes contains '@GetMapping' \| show name, file, signature"` |
 | Show me the domain model | `smartgrep query "structs where file contains 'domain' or file contains 'model' \| with fields"` |
 | What does X depend on? | `smartgrep query "symbol X \| with deps, refs"` |
-| Explore this codebase | `smartgrep ls structs` then `smartgrep ls functions` |
 | Find implementations of Y | `smartgrep refs Y` or `smartgrep query "structs where parent = 'Y' \| with fields"` |
 | List services | `smartgrep query "structs where attributes contains '@Service' \| show name, file"` |
 | Public API in a directory | `smartgrep query "functions where file contains 'src/api' and visibility = public \| show name, file, signature"` |
+
+## Large-repo warnings
+
+**Never run bare `smartgrep map` or `smartgrep ls functions` on a repo with 100+ files.** The output can be hundreds of lines and burns context budget without adding value. Always scope first:
+
+```bash
+# BAD on large repos
+smartgrep map
+smartgrep ls functions
+
+# GOOD: gauge size first, then zoom
+smartgrep map --depth 1
+smartgrep map --in src/services/
+smartgrep query "functions where file contains 'src/api/' | show name, file | limit 20"
+```
+
+**Generated files are excluded by default.** Bindgen output, protobuf stubs, and vendor code are filtered out automatically. Use `--include-generated` only when you specifically need to inspect generated code.
 
 ## Output guidance
 
