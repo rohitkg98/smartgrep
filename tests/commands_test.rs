@@ -12,7 +12,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(),
             qualified_name: "crate::alpha::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 10, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn foo(x: i32) -> i32".to_string()),
@@ -25,7 +25,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "Bar".to_string(),
             qualified_name: "crate::alpha::Bar".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 20, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -41,7 +41,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "process".to_string(),
             qualified_name: "crate::alpha::Bar::process".to_string(),
-            kind: SymbolKind::Method,
+            kind: "method".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 32, col: 5 },
             visibility: Visibility::Public,
             signature: Some("pub fn process(&self, count: usize)".to_string()),
@@ -57,7 +57,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(),
             qualified_name: "crate::beta::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 5, col: 1 },
             visibility: Visibility::Private,
             signature: Some("fn foo()".to_string()),
@@ -146,5 +146,5 @@ fn show_json_format() {
     let arr = parsed.as_array().unwrap();
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["name"], "Bar");
-    assert_eq!(arr[0]["kind"], "Struct");
+    assert_eq!(arr[0]["kind"], "struct");
 }

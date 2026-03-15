@@ -205,7 +205,7 @@ fn extract_class(
     extract_superclass_deps(node, source, path, &qualified_name, ir);
     extract_super_interfaces_deps(node, source, path, &qualified_name, ir);
 
-    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), SymbolKind::Struct, loc(node, path), vis);
+    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), "class", loc(node, path), vis);
     sym.parent = outer_name.map(|s| s.to_string());
     sym.attributes = attrs;
     sym.fields = fields;
@@ -247,7 +247,7 @@ fn extract_interface(
         name.clone()
     };
 
-    let mut sym = Symbol::new(display_name, qualified_name.clone(), SymbolKind::Trait, loc(node, path), vis);
+    let mut sym = Symbol::new(display_name, qualified_name.clone(), "interface", loc(node, path), vis);
     sym.parent = outer_name.map(|s| s.to_string());
     sym.attributes = attrs;
     ir.symbols.push(sym);
@@ -284,7 +284,7 @@ fn extract_enum(
     // Extract super interfaces for enum
     extract_super_interfaces_deps(node, source, path, &qualified_name, ir);
 
-    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), SymbolKind::Enum, loc(node, path), vis);
+    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), "enum", loc(node, path), vis);
     sym.parent = outer_name.map(|s| s.to_string());
     sym.attributes = attrs;
     ir.symbols.push(sym);
@@ -338,7 +338,7 @@ fn extract_record(
     // Extract super interfaces for record
     extract_super_interfaces_deps(node, source, path, &qualified_name, ir);
 
-    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), SymbolKind::Struct, loc(node, path), vis);
+    let mut sym = Symbol::new(name.clone(), qualified_name.clone(), "record", loc(node, path), vis);
     sym.parent = outer_name.map(|s| s.to_string());
     sym.attributes = attrs;
     sym.fields = fields;
@@ -452,7 +452,7 @@ fn extract_method(
     let return_type = extract_return_type(node, source);
     let sig = build_method_signature(node, source);
 
-    let mut sym = Symbol::new(name, qualified_name, SymbolKind::Method, loc(node, path), vis);
+    let mut sym = Symbol::new(name, qualified_name, "method", loc(node, path), vis);
     sym.signature = Some(sig);
     sym.parent = Some(parent_name.to_string());
     sym.attributes = attrs;
@@ -480,7 +480,7 @@ fn extract_constructor(
     let params = extract_formal_params(node, source);
     let sig = build_method_signature(node, source);
 
-    let mut sym = Symbol::new(name, qualified_name, SymbolKind::Method, loc(node, path), vis);
+    let mut sym = Symbol::new(name, qualified_name, "method", loc(node, path), vis);
     sym.signature = Some(sig);
     sym.parent = Some(parent_name.to_string());
     sym.attributes = attrs;
@@ -631,7 +631,7 @@ fn extract_superclass_deps(
             ir.dependencies.push(Dependency {
                 from_qualified: qualified_name.to_string(),
                 to_name: node_text(&type_id, source).to_string(),
-                kind: DepKind::TraitImpl,
+                kind: DepKind::Implements,
                 loc: loc(node, path),
             });
         }
@@ -654,7 +654,7 @@ fn extract_super_interfaces_deps(
                     ir.dependencies.push(Dependency {
                         from_qualified: qualified_name.to_string(),
                         to_name: node_text(&child, source).to_string(),
-                        kind: DepKind::TraitImpl,
+                        kind: DepKind::Implements,
                         loc: loc(node, path),
                     });
                 }
@@ -701,7 +701,7 @@ mod tests {
     fn test_parse_simple_class() {
         let source = "public class Foo { public int x; }";
         let ir = parse_file(Path::new("Foo.java"), source).unwrap();
-        let classes: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Struct).collect();
+        let classes: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "class").collect();
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].name, "Foo");
         assert_eq!(classes[0].visibility, Visibility::Public);
@@ -711,7 +711,7 @@ mod tests {
     fn test_parse_interface() {
         let source = "public interface Processor { void process(); }";
         let ir = parse_file(Path::new("Processor.java"), source).unwrap();
-        let traits: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Trait).collect();
+        let traits: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "interface").collect();
         assert_eq!(traits.len(), 1);
         assert_eq!(traits[0].name, "Processor");
     }
@@ -720,7 +720,7 @@ mod tests {
     fn test_parse_enum() {
         let source = "public enum Color { RED, GREEN, BLUE }";
         let ir = parse_file(Path::new("Color.java"), source).unwrap();
-        let enums: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Enum).collect();
+        let enums: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "enum").collect();
         assert_eq!(enums.len(), 1);
         assert_eq!(enums[0].name, "Color");
     }
@@ -751,7 +751,7 @@ public class Foo {
 "#;
         let ir = parse_file(Path::new("Foo.java"), source).unwrap();
         let bar = ir.symbols.iter().find(|s| s.name == "bar").unwrap();
-        assert_eq!(bar.kind, SymbolKind::Method);
+        assert_eq!(bar.kind, "method");
         assert_eq!(bar.parent.as_deref(), Some("Foo"));
         assert_eq!(bar.params.len(), 1);
         assert_eq!(bar.params[0].name, "x");
@@ -766,7 +766,7 @@ public class Foo {
 }"#;
         let ir = parse_file(Path::new("TripQuery.java"), source).unwrap();
         let records: Vec<_> = ir.symbols.iter()
-            .filter(|s| s.kind == SymbolKind::Struct)
+            .filter(|s| s.kind == "record")
             .collect();
         assert_eq!(records.len(), 2, "Should find both inner records");
         let names: Vec<&str> = records.iter().map(|s| s.name.as_str()).collect();
@@ -780,7 +780,7 @@ public class Foo {
         let source = "package com.example;\n\nimport org.springframework.lang.NonNull;\n\npublic sealed interface TripPersistenceAction extends TripProvider {\n\n    record CreateTripAction(@NonNull Trip trip) implements TripPersistenceAction {\n    }\n\n    record UpdateTripAction(@NonNull Trip trip) implements TripPersistenceAction {\n    }\n\n    record DeleteTripAction(@NonNull Trip trip) implements TripPersistenceAction {\n    }\n}\n";
         let ir = parse_file(Path::new("src/main/java/com/example/TripPersistenceAction.java"), source).unwrap();
         let records: Vec<_> = ir.symbols.iter()
-            .filter(|s| s.kind == SymbolKind::Struct)
+            .filter(|s| s.kind == "record")
             .collect();
         assert_eq!(records.len(), 3, "Should find all 3 inner records");
         let names: Vec<&str> = records.iter().map(|s| s.name.as_str()).collect();
@@ -794,7 +794,7 @@ public class Foo {
         let source = "public record Point(int x, int y) {}";
         let ir = parse_file(Path::new("Point.java"), source).unwrap();
         let point = ir.symbols.iter().find(|s| s.name == "Point").unwrap();
-        assert_eq!(point.kind, SymbolKind::Struct);
+        assert_eq!(point.kind, "record");
         assert_eq!(point.fields.len(), 2);
         assert_eq!(point.params.len(), 2);
         assert_eq!(point.fields[0].name, "x");

@@ -29,6 +29,10 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
 /// load error as a stale/missing index and trigger a rebuild.
 pub fn load(path: &Path) -> Result<Index> {
     let data = std::fs::read_to_string(path)?;
-    let index: Index = serde_json::from_str(&data)?;
+    let index: Index = serde_json::from_str(&data)
+        .map_err(|_| anyhow::anyhow!("index format changed — re-indexing"))?;
+    if index.version != super::types::INDEX_VERSION {
+        return Err(anyhow::anyhow!("index version mismatch — re-indexing"));
+    }
     Ok(index)
 }

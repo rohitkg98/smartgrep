@@ -83,11 +83,11 @@ pub fn format_text(refs: &[&Dependency]) -> String {
 
 fn dep_kind_str(dep: &Dependency) -> &'static str {
     match dep.kind {
-        crate::ir::types::DepKind::Import => "Import",
-        crate::ir::types::DepKind::FunctionCall => "FunctionCall",
-        crate::ir::types::DepKind::TypeReference => "TypeReference",
-        crate::ir::types::DepKind::TraitImpl => "TraitImpl",
-        crate::ir::types::DepKind::FieldType => "FieldType",
+        crate::ir::types::DepKind::Import => "import",
+        crate::ir::types::DepKind::Call => "call",
+        crate::ir::types::DepKind::TypeRef => "type_ref",
+        crate::ir::types::DepKind::Implements => "implements",
+        crate::ir::types::DepKind::FieldType => "field_type",
     }
 }
 

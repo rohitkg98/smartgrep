@@ -47,13 +47,24 @@ Parser (tree-sitter) → IR → Index Builder → Index → Command
 ## Code Navigation
 Always use `smartgrep` for structural code exploration on this project. It is faster and more token-efficient than reading files or grepping.
 
+### Language-native vocabulary
+Symbols use language-native kind strings, not a shared enum:
+- **Rust:** fn, method, struct, enum, trait, impl, const, type, mod
+- **Java:** class, interface, enum, method, record
+- **Go:** func, method, struct, interface, const, type
+
+Dependency kinds: Call (was FunctionCall), TypeRef (was TypeReference), Implements (was TraitImpl)
+
 ### Prefer smartgrep query for compound questions
 ```bash
 # Instead of multiple grep/read calls, compose one query:
 smartgrep query "structs where file contains 'ir/' and visibility = public | with fields"
 smartgrep query "functions where name = 'run' and file contains 'commands/' | show name, file, signature"
-smartgrep query "symbol SymbolKind | with deps, refs"
+smartgrep query "symbol Index | with deps, refs"
 smartgrep query "deps where from contains 'parser' | show from, to, dep_kind"
+
+# Find types implementing a trait/interface:
+smartgrep query "structs implementing Display"
 ```
 
 ### Use basic commands for simple lookups
@@ -82,9 +93,12 @@ smartgrep query "functions where name starts_with 'New' and file contains 'servi
 ```
 
 ### Language notes
-- **Go interfaces** → use `interfaces` or `traits` (both work)
+- **Go/Java interfaces** → use `interfaces` (kind="interface")
+- **Rust traits** → use `traits` (kind="trait", Rust only)
+- **`interfaces` and `traits` are distinct** — `interfaces` matches Java/Go interface, `traits` matches Rust trait
 - **Go method receivers** → stored in `parent` field (e.g., `methods where parent = MultiGateway`)
 - **Generated code** → filter out with `where file not contains '.pb.go'`
+- **`implementing` clause** → `structs implementing Display` finds types that implement a trait/interface
 
 ### When to use smartgrep vs file reading
 - **Use smartgrep**: finding symbols, understanding structure, exploring dependencies, listing functions/structs

@@ -11,7 +11,7 @@ fn parse_fixture() -> Ir {
 #[test]
 fn fixture_has_struct() {
     let ir = parse_fixture();
-    let structs: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Struct).collect();
+    let structs: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "struct").collect();
     assert_eq!(structs.len(), 1);
     assert_eq!(structs[0].name, "Config");
     assert_eq!(structs[0].fields.len(), 3);
@@ -24,7 +24,7 @@ fn fixture_has_struct() {
 #[test]
 fn fixture_has_enum() {
     let ir = parse_fixture();
-    let enums: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Enum).collect();
+    let enums: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "enum").collect();
     assert_eq!(enums.len(), 1);
     assert_eq!(enums[0].name, "Status");
 }
@@ -32,7 +32,7 @@ fn fixture_has_enum() {
 #[test]
 fn fixture_has_trait() {
     let ir = parse_fixture();
-    let traits: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Trait).collect();
+    let traits: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "trait").collect();
     assert_eq!(traits.len(), 1);
     assert_eq!(traits[0].name, "Processor");
 }
@@ -40,7 +40,7 @@ fn fixture_has_trait() {
 #[test]
 fn fixture_has_impl_blocks() {
     let ir = parse_fixture();
-    let impls: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Impl).collect();
+    let impls: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "impl").collect();
     assert_eq!(impls.len(), 2);
     // One is "impl Config", the other is "impl Processor for Config"
     let names: Vec<&str> = impls.iter().map(|s| s.name.as_str()).collect();
@@ -51,7 +51,7 @@ fn fixture_has_impl_blocks() {
 #[test]
 fn fixture_has_methods() {
     let ir = parse_fixture();
-    let methods: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Method).collect();
+    let methods: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "method").collect();
     // new, add_value from impl Config; process, name from impl Processor for Config
     assert_eq!(methods.len(), 4);
     let method_names: Vec<&str> = methods.iter().map(|s| s.name.as_str()).collect();
@@ -63,7 +63,7 @@ fn fixture_has_methods() {
 #[test]
 fn fixture_has_standalone_functions() {
     let ir = parse_fixture();
-    let fns: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Function).collect();
+    let fns: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "fn").collect();
     assert_eq!(fns.len(), 2);
     let fn_names: Vec<&str> = fns.iter().map(|s| s.name.as_str()).collect();
     assert!(fn_names.contains(&"standalone_function"));
@@ -73,7 +73,7 @@ fn fixture_has_standalone_functions() {
 #[test]
 fn fixture_has_const() {
     let ir = parse_fixture();
-    let consts: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Const).collect();
+    let consts: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "const").collect();
     assert_eq!(consts.len(), 1);
     assert_eq!(consts[0].name, "MAX_SIZE");
 }
@@ -81,7 +81,7 @@ fn fixture_has_const() {
 #[test]
 fn fixture_has_type_alias() {
     let ir = parse_fixture();
-    let types: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::TypeAlias).collect();
+    let types: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "type").collect();
     assert_eq!(types.len(), 1);
     assert_eq!(types[0].name, "Callback");
 }
@@ -96,7 +96,7 @@ fn fixture_has_imports() {
 #[test]
 fn fixture_has_trait_impl_dep() {
     let ir = parse_fixture();
-    let trait_impls: Vec<_> = ir.dependencies.iter().filter(|d| d.kind == DepKind::TraitImpl).collect();
+    let trait_impls: Vec<_> = ir.dependencies.iter().filter(|d| d.kind == DepKind::Implements).collect();
     assert_eq!(trait_impls.len(), 1);
     assert_eq!(trait_impls[0].to_name, "Processor");
 }
@@ -104,14 +104,14 @@ fn fixture_has_trait_impl_dep() {
 #[test]
 fn method_has_correct_parent() {
     let ir = parse_fixture();
-    let new_method = ir.symbols.iter().find(|s| s.name == "new" && s.kind == SymbolKind::Method).unwrap();
+    let new_method = ir.symbols.iter().find(|s| s.name == "new" && s.kind == "method").unwrap();
     assert_eq!(new_method.parent.as_deref(), Some("Config"));
 }
 
 #[test]
 fn qualified_names_use_file_path() {
     let ir = parse_fixture();
-    let config = ir.symbols.iter().find(|s| s.name == "Config" && s.kind == SymbolKind::Struct).unwrap();
+    let config = ir.symbols.iter().find(|s| s.name == "Config" && s.kind == "struct").unwrap();
     assert!(config.qualified_name.starts_with("crate::"));
     assert!(config.qualified_name.contains("sample"));
 }
@@ -129,7 +129,7 @@ fn function_has_params() {
 #[test]
 fn struct_has_attributes() {
     let ir = parse_fixture();
-    let config = ir.symbols.iter().find(|s| s.name == "Config" && s.kind == SymbolKind::Struct).unwrap();
+    let config = ir.symbols.iter().find(|s| s.name == "Config" && s.kind == "struct").unwrap();
     assert!(!config.attributes.is_empty());
     assert!(config.attributes[0].contains("derive"));
 }

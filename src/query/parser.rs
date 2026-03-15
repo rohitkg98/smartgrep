@@ -1,8 +1,38 @@
 use anyhow::{anyhow, Result};
 
-use crate::ir::types::SymbolKind;
-
 use super::ast::*;
+
+/// Normalize a user-facing kind term to the canonical kind string stored in the IR.
+fn normalize_kind_term(s: &str) -> Option<String> {
+    match s.to_lowercase().as_str() {
+        // Rust-native
+        "fn" | "fns"                            => Some("fn".to_string()),
+        "struct" | "structs"                    => Some("struct".to_string()),
+        "trait" | "traits"                      => Some("trait".to_string()),
+        "impl" | "impls"                        => Some("impl".to_string()),
+        "mod" | "mods" | "modules" | "module"   => Some("mod".to_string()),
+        // Java-native
+        "class" | "classes"                     => Some("class".to_string()),
+        "annotation" | "annotations"            => Some("annotation".to_string()),
+        "record" | "records"                    => Some("record".to_string()),
+        // Go-native
+        "func" | "funcs"                        => Some("func".to_string()),
+        // Cross-language (genuine shared concepts)
+        "method" | "methods"                    => Some("method".to_string()),
+        "interface" | "interfaces"              => Some("interface".to_string()),
+        "enum" | "enums"                        => Some("enum".to_string()),
+        "const" | "consts" | "constants"        => Some("const".to_string()),
+        "type" | "types"                        => Some("type".to_string()),
+        // Legacy aliases for backwards-compatible queries
+        "functions" | "function"                => Some("fn".to_string()),
+        _                                       => None,
+    }
+}
+
+/// Public entry point for `ls` command's kind filter.
+pub fn normalize_kind_filter(s: &str) -> Option<String> {
+    normalize_kind_term(s)
+}
 
 /// Parse a query string into a Batch of queries.
 pub fn parse(input: &str) -> Result<Batch> {
@@ -122,17 +152,6 @@ fn parse_source(input: &str) -> Result<Source> {
         // "symbols" optionally "in 'file'"
         "symbols" => parse_symbols_source(rest, None),
 
-        // Kind-specific: "structs", "functions", etc.
-        "structs" | "struct" => parse_symbols_source(rest, Some(SymbolKind::Struct)),
-        "functions" | "function" | "fn" => parse_symbols_source(rest, Some(SymbolKind::Function)),
-        "methods" | "method" => parse_symbols_source(rest, Some(SymbolKind::Method)),
-        "traits" | "trait" | "interfaces" | "interface" => parse_symbols_source(rest, Some(SymbolKind::Trait)),
-        "enums" | "enum" => parse_symbols_source(rest, Some(SymbolKind::Enum)),
-        "impls" | "impl" => parse_symbols_source(rest, Some(SymbolKind::Impl)),
-        "consts" | "const" => parse_symbols_source(rest, Some(SymbolKind::Const)),
-        "types" | "type" => parse_symbols_source(rest, Some(SymbolKind::TypeAlias)),
-        "modules" | "module" | "mod" => parse_symbols_source(rest, Some(SymbolKind::Module)),
-
         // "symbol <name>" — specific symbol lookup
         "symbol" => {
             if rest.is_empty() {
@@ -165,18 +184,29 @@ fn parse_source(input: &str) -> Result<Source> {
             Ok(Source::Refs { name, where_clause })
         }
 
-        _ => Err(anyhow!(
-            "unknown source '{}'. Expected: symbols, structs, functions, methods, traits, \
-             interfaces, enums, impls, consts, types, modules, symbol, deps, refs",
-            keyword
-        )),
+        // Kind-specific: try normalize_kind_term
+        _ => {
+            if let Some(kind) = normalize_kind_term(&keyword) {
+                parse_symbols_source(rest, Some(kind))
+            } else {
+                Err(anyhow!(
+                    "unknown source '{}'. Use language-native terms:\n  \
+                     Rust:  fns, structs, enums, traits, consts, types, mods, methods\n  \
+                     Java:  classes, interfaces, enums, methods, annotations, records, consts\n  \
+                     Go:    funcs, structs, interfaces, methods, consts, types\n  \
+                     All:   symbols, deps, refs, symbol <name>",
+                    keyword
+                ))
+            }
+        }
     }
 }
 
-/// Parse a symbols source with optional "in 'file'" and "where" clauses.
-fn parse_symbols_source(tokens: &[String], kind_filter: Option<SymbolKind>) -> Result<Source> {
+/// Parse a symbols source with optional "in 'file'", "implementing", and "where" clauses.
+fn parse_symbols_source(tokens: &[String], kind_filter: Option<String>) -> Result<Source> {
     let mut i = 0;
     let mut in_file = None;
+    let mut implementing = None;
     let mut where_clause = Vec::new();
 
     // Check for "in 'file'"
@@ -189,6 +219,16 @@ fn parse_symbols_source(tokens: &[String], kind_filter: Option<SymbolKind>) -> R
         i += 1;
     }
 
+    // Check for "implementing <name>"
+    if i < tokens.len() && tokens[i].to_lowercase() == "implementing" {
+        i += 1;
+        if i >= tokens.len() {
+            return Err(anyhow!("'implementing' requires a name argument"));
+        }
+        implementing = Some(tokens[i].clone());
+        i += 1;
+    }
+
     // Check for "where" clause
     if i < tokens.len() && tokens[i].to_lowercase() == "where" {
         where_clause = parse_where_conditions(&tokens[i..])?;
@@ -197,6 +237,7 @@ fn parse_symbols_source(tokens: &[String], kind_filter: Option<SymbolKind>) -> R
     Ok(Source::Symbols {
         kind_filter,
         in_file,
+        implementing,
         where_clause,
     })
 }
@@ -414,8 +455,9 @@ mod tests {
         assert_eq!(
             q.source,
             Source::Symbols {
-                kind_filter: Some(SymbolKind::Struct),
+                kind_filter: Some("struct".to_string()),
                 in_file: None,
+                implementing: None,
                 where_clause: vec![],
             }
         );
@@ -428,7 +470,7 @@ mod tests {
         let q = &batch.queries[0];
         match &q.source {
             Source::Symbols { kind_filter, where_clause, .. } => {
-                assert_eq!(*kind_filter, Some(SymbolKind::Function));
+                assert_eq!(*kind_filter, Some("fn".to_string()));
                 // One AND group with 2 conditions
                 assert_eq!(where_clause.len(), 1);
                 assert_eq!(where_clause[0].len(), 2);
@@ -441,6 +483,34 @@ mod tests {
             }
             _ => panic!("expected Symbols source"),
         }
+    }
+
+    #[test]
+    fn parse_implementing_clause() {
+        let batch = parse("structs implementing Display").unwrap();
+        let q = &batch.queries[0];
+        match &q.source {
+            Source::Symbols { kind_filter, implementing, .. } => {
+                assert_eq!(*kind_filter, Some("struct".to_string()));
+                assert_eq!(*implementing, Some("Display".to_string()));
+            }
+            _ => panic!("expected Symbols source"),
+        }
+    }
+
+    #[test]
+    fn parse_language_native_terms() {
+        // Rust terms
+        assert!(parse("fns").is_ok());
+        assert!(parse("traits").is_ok());
+        assert!(parse("mods").is_ok());
+        // Java terms
+        assert!(parse("classes").is_ok());
+        assert!(parse("records").is_ok());
+        assert!(parse("annotations").is_ok());
+        // Go terms
+        assert!(parse("funcs").is_ok());
+        assert!(parse("interfaces").is_ok());
     }
 
     #[test]

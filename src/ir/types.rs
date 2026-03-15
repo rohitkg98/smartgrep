@@ -1,56 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::str::FromStr;
-
-/// The kind of a symbol extracted from source code.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SymbolKind {
-    Function,
-    Method,
-    Struct,
-    Enum,
-    Trait,
-    Impl,
-    Const,
-    TypeAlias,
-    Module,
-}
-
-impl std::fmt::Display for SymbolKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            SymbolKind::Function => "fn",
-            SymbolKind::Method => "method",
-            SymbolKind::Struct => "struct",
-            SymbolKind::Enum => "enum",
-            SymbolKind::Trait => "trait",
-            SymbolKind::Impl => "impl",
-            SymbolKind::Const => "const",
-            SymbolKind::TypeAlias => "type",
-            SymbolKind::Module => "mod",
-        };
-        write!(f, "{}", s)
-    }
-}
-
-impl FromStr for SymbolKind {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "functions" | "function" | "fn" => Ok(SymbolKind::Function),
-            "methods" | "method" => Ok(SymbolKind::Method),
-            "structs" | "struct" => Ok(SymbolKind::Struct),
-            "enums" | "enum" => Ok(SymbolKind::Enum),
-            "traits" | "trait" | "interfaces" | "interface" => Ok(SymbolKind::Trait),
-            "impls" | "impl" => Ok(SymbolKind::Impl),
-            "consts" | "const" => Ok(SymbolKind::Const),
-            "types" | "type" => Ok(SymbolKind::TypeAlias),
-            "modules" | "module" | "mod" => Ok(SymbolKind::Module),
-            _ => Err(format!("unknown symbol kind '{}'", s)),
-        }
-    }
-}
 
 /// Visibility of a symbol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,7 +37,7 @@ pub struct Param {
 pub struct Symbol {
     pub name: String,
     pub qualified_name: String,
-    pub kind: SymbolKind,
+    pub kind: String,
     pub loc: SourceLoc,
     pub visibility: Visibility,
     pub signature: Option<String>,
@@ -104,14 +53,14 @@ impl Symbol {
     pub fn new(
         name: String,
         qualified_name: String,
-        kind: SymbolKind,
+        kind: impl Into<String>,
         loc: SourceLoc,
         visibility: Visibility,
     ) -> Self {
         Symbol {
             name,
             qualified_name,
-            kind,
+            kind: kind.into(),
             loc,
             visibility,
             signature: None,
@@ -128,9 +77,9 @@ impl Symbol {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DepKind {
     Import,
-    FunctionCall,
-    TypeReference,
-    TraitImpl,
+    Call,
+    TypeRef,
+    Implements,
     FieldType,
 }
 
@@ -138,9 +87,9 @@ impl std::fmt::Display for DepKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             DepKind::Import => "import",
-            DepKind::FunctionCall => "call",
-            DepKind::TypeReference => "type_ref",
-            DepKind::TraitImpl => "trait_impl",
+            DepKind::Call => "call",
+            DepKind::TypeRef => "type_ref",
+            DepKind::Implements => "implements",
             DepKind::FieldType => "field_type",
         };
         write!(f, "{}", s)

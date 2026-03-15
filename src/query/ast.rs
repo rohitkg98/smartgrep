@@ -1,14 +1,16 @@
-use crate::ir::types::SymbolKind;
-
 /// AST for the smartgrep query DSL.
 ///
 /// Grammar (informal):
 ///   batch       = query (";" query)*
 ///   query       = source ("|" stage)*
-///   source      = source_kind [argument] [where_clause]
-///   source_kind = "symbols" | "structs" | "functions" | "methods" | "traits"
-///                | "enums" | "impls" | "consts" | "types" | "modules"
-///                | "symbol" <name> | "deps" [<name>] | "refs" [<name>]
+///   source      = source_kind [argument] [implementing_clause] [where_clause]
+///   source_kind = "symbols"
+///               | "fns" | "structs" | "enums" | "traits" | "consts" | "types" | "mods"   (Rust)
+///               | "classes" | "interfaces" | "methods" | "annotations" | "records"        (Java)
+///               | "funcs" | "structs" | "interfaces" | "methods" | "consts" | "types"     (Go)
+///               | "methods" | "interfaces" | "enums" | "consts"                           (cross-language)
+///               | "symbol" <name> | "deps" [<name>] | "refs" [<name>]
+///   implementing_clause = "implementing" <name>   -- Rust/Java only
 ///   where_clause = "where" and_group ("or" and_group)*
 ///   and_group   = condition ("and" condition)*
 ///   condition   = field op value
@@ -44,8 +46,9 @@ pub enum Source {
     /// All symbols, optionally filtered by kind.
     /// "symbols", "structs", "functions", etc.
     Symbols {
-        kind_filter: Option<SymbolKind>,
+        kind_filter: Option<String>,
         in_file: Option<String>,
+        implementing: Option<String>,
         where_clause: Vec<Vec<Condition>>,
     },
     /// A specific symbol by name: "symbol Foo"

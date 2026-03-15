@@ -18,7 +18,7 @@ fn fixture_qualified_names_use_package() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "struct")
         .unwrap();
     assert_eq!(config.qualified_name, "sample.Config");
 }
@@ -51,7 +51,7 @@ fn fixture_has_structs() {
     let structs: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Struct)
+        .filter(|s| s.kind == "struct")
         .collect();
     let names: Vec<&str> = structs.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"Config"));
@@ -64,7 +64,7 @@ fn fixture_config_has_fields() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "struct")
         .expect("should find Config");
     assert_eq!(config.fields.len(), 3);
     let field_names: Vec<&str> = config.fields.iter().map(|f| f.name.as_str()).collect();
@@ -79,7 +79,7 @@ fn fixture_struct_visibility_public() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "struct")
         .unwrap();
     assert_eq!(config.visibility, Visibility::Public);
 }
@@ -90,7 +90,7 @@ fn fixture_field_visibility_from_capitalization() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "struct")
         .unwrap();
 
     let name_field = config.fields.iter().find(|f| f.name == "Name").unwrap();
@@ -106,7 +106,7 @@ fn fixture_server_has_embedded_field() {
     let server = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Server" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Server" && s.kind == "struct")
         .expect("should find Server");
     let field_names: Vec<&str> = server.fields.iter().map(|f| f.name.as_str()).collect();
     assert!(field_names.contains(&"Reader"));
@@ -124,7 +124,7 @@ fn fixture_has_interfaces() {
     let traits: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Trait)
+        .filter(|s| s.kind == "interface")
         .collect();
     let names: Vec<&str> = traits.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"Handler"));
@@ -137,14 +137,14 @@ fn fixture_interface_visibility() {
     let handler = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Handler" && s.kind == SymbolKind::Trait)
+        .find(|s| s.name == "Handler" && s.kind == "interface")
         .unwrap();
     assert_eq!(handler.visibility, Visibility::Public);
 
     let writer = ir
         .symbols
         .iter()
-        .find(|s| s.name == "writer" && s.kind == SymbolKind::Trait)
+        .find(|s| s.name == "writer" && s.kind == "interface")
         .unwrap();
     assert_eq!(writer.visibility, Visibility::Private);
 }
@@ -155,14 +155,14 @@ fn fixture_interface_methods_extracted() {
     let handle = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Handle" && s.kind == SymbolKind::Method && s.parent.as_deref() == Some("Handler"))
+        .find(|s| s.name == "Handle" && s.kind == "method" && s.parent.as_deref() == Some("Handler"))
         .expect("should find Handle method on Handler interface");
     assert_eq!(handle.parent.as_deref(), Some("Handler"));
 
     let name_method = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Name" && s.kind == SymbolKind::Method && s.parent.as_deref() == Some("Handler"))
+        .find(|s| s.name == "Name" && s.kind == "method" && s.parent.as_deref() == Some("Handler"))
         .expect("should find Name method on Handler interface");
     assert_eq!(name_method.parent.as_deref(), Some("Handler"));
 }
@@ -177,7 +177,7 @@ fn fixture_has_functions() {
     let funcs: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Function)
+        .filter(|s| s.kind == "func")
         .collect();
     let names: Vec<&str> = funcs.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"NewConfig"));
@@ -197,7 +197,7 @@ fn fixture_function_visibility() {
     let helper_fn = ir
         .symbols
         .iter()
-        .find(|s| s.name == "helper" && s.kind == SymbolKind::Function)
+        .find(|s| s.name == "helper" && s.kind == "func")
         .unwrap();
     assert_eq!(helper_fn.visibility, Visibility::Private);
 }
@@ -250,7 +250,7 @@ fn fixture_has_methods() {
     let methods: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Method && s.parent.is_some())
+        .filter(|s| s.kind == "method" && s.parent.is_some())
         .filter(|s| {
             // Exclude interface method specs
             let parent = s.parent.as_deref().unwrap_or("");
@@ -269,7 +269,7 @@ fn fixture_method_has_correct_parent() {
     let get_name = ir
         .symbols
         .iter()
-        .find(|s| s.name == "GetName" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "GetName" && s.kind == "method")
         .unwrap();
     assert_eq!(get_name.parent.as_deref(), Some("Config"));
 }
@@ -280,14 +280,14 @@ fn fixture_method_visibility() {
     let get_name = ir
         .symbols
         .iter()
-        .find(|s| s.name == "GetName" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "GetName" && s.kind == "method")
         .unwrap();
     assert_eq!(get_name.visibility, Visibility::Public);
 
     let add_value = ir
         .symbols
         .iter()
-        .find(|s| s.name == "addValue" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "addValue" && s.kind == "method")
         .unwrap();
     assert_eq!(add_value.visibility, Visibility::Private);
 }
@@ -298,7 +298,7 @@ fn fixture_method_qualified_name() {
     let get_name = ir
         .symbols
         .iter()
-        .find(|s| s.name == "GetName" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "GetName" && s.kind == "method")
         .unwrap();
     assert_eq!(get_name.qualified_name, "sample.Config.GetName");
 }
@@ -313,7 +313,7 @@ fn fixture_has_consts() {
     let consts: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Const)
+        .filter(|s| s.kind == "const")
         .collect();
     let names: Vec<&str> = consts.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"MaxSize"));
@@ -351,7 +351,7 @@ fn fixture_has_type_aliases() {
     let aliases: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::TypeAlias)
+        .filter(|s| s.kind == "type")
         .collect();
     let names: Vec<&str> = aliases.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"StatusCode"));
@@ -364,7 +364,7 @@ fn fixture_type_alias_has_return_type() {
     let status_code = ir
         .symbols
         .iter()
-        .find(|s| s.name == "StatusCode" && s.kind == SymbolKind::TypeAlias)
+        .find(|s| s.name == "StatusCode" && s.kind == "type")
         .unwrap();
     assert_eq!(status_code.return_type.as_deref(), Some("int"));
 }

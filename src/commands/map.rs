@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::format::OutputFormat;
 use crate::index::auto;
 use crate::index::types::Index;
-use crate::ir::types::{Symbol, SymbolKind, Visibility};
+use crate::ir::types::{Symbol, Visibility};
 
 pub fn run(
     in_path: &Option<String>,
@@ -31,7 +31,7 @@ pub fn run(
                 .by_file(file)
                 .into_iter()
                 .filter(|s| {
-                    if matches!(s.kind, SymbolKind::Impl | SymbolKind::Method) {
+                    if s.kind == "impl" || s.kind == "method" {
                         return false;
                     }
                     if !all {
@@ -170,39 +170,38 @@ fn group_by_dir(
 
 // --- Symbol helpers ---
 
-fn symbol_sort_order(kind: &SymbolKind) -> u8 {
+fn symbol_sort_order(kind: &str) -> u8 {
     match kind {
-        SymbolKind::Struct
-        | SymbolKind::Enum
-        | SymbolKind::Trait
-        | SymbolKind::TypeAlias
-        | SymbolKind::Const => 0,
+        "struct" | "class" | "record" | "enum" | "trait" | "interface" | "type" | "const" => 0,
         _ => 1,
     }
 }
 
 fn inline_name(s: &Symbol) -> String {
-    match s.kind {
-        SymbolKind::Function => s.name.clone(),
-        SymbolKind::Struct => format!("struct {}", s.name),
-        SymbolKind::Enum => format!("enum {}", s.name),
-        SymbolKind::Trait => format!("trait {}", s.name),
-        SymbolKind::TypeAlias => format!("type {}", s.name),
-        SymbolKind::Const => format!("const {}", s.name),
-        SymbolKind::Module => format!("mod {}", s.name),
+    match s.kind.as_str() {
+        "fn" | "func" => s.name.clone(),
+        "struct" => format!("struct {}", s.name),
+        "class" => format!("class {}", s.name),
+        "record" => format!("record {}", s.name),
+        "enum" => format!("enum {}", s.name),
+        "trait" => format!("trait {}", s.name),
+        "interface" => format!("interface {}", s.name),
+        "type" => format!("type {}", s.name),
+        "const" => format!("const {}", s.name),
+        "mod" => format!("mod {}", s.name),
         _ => s.name.clone(),
     }
 }
 
-fn kind_label(kind: &SymbolKind) -> Option<(&'static str, u8)> {
+fn kind_label(kind: &str) -> Option<(&'static str, u8)> {
     match kind {
-        SymbolKind::Struct => Some(("struct", 0)),
-        SymbolKind::Enum => Some(("enum", 1)),
-        SymbolKind::Trait => Some(("trait", 2)),
-        SymbolKind::TypeAlias => Some(("type", 3)),
-        SymbolKind::Const => Some(("const", 4)),
-        SymbolKind::Module => Some(("mod", 5)),
-        SymbolKind::Function => Some(("fn", 6)),
+        "struct" | "class" | "record" => Some(("struct", 0)),
+        "enum" => Some(("enum", 1)),
+        "trait" | "interface" => Some(("trait", 2)),
+        "type" => Some(("type", 3)),
+        "const" => Some(("const", 4)),
+        "mod" => Some(("mod", 5)),
+        "fn" | "func" => Some(("fn", 6)),
         _ => None,
     }
 }
@@ -551,7 +550,7 @@ fn format_json(
                             .iter()
                             .map(|s| JsonSymbol {
                                 name: s.name.clone(),
-                                kind: format!("{}", s.kind),
+                                kind: s.kind.clone(),
                             })
                             .collect(),
                     }

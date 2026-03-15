@@ -171,9 +171,9 @@ fn extract_function(
     let vis = get_visibility_with_source(node, source);
 
     let kind = if parent.is_some() {
-        SymbolKind::Method
+        "method"
     } else {
-        SymbolKind::Function
+        "fn"
     };
 
     let qualified_name = if let Some(p) = parent {
@@ -245,7 +245,7 @@ fn extract_struct(node: &Node, source: &str, path: &Path, prefix: &str) -> Optio
     let qualified_name = format!("{}::{}", prefix, name);
     let fields = extract_struct_fields(node, source);
 
-    let mut sym = Symbol::new(name, qualified_name, SymbolKind::Struct, loc(node, path), vis);
+    let mut sym = Symbol::new(name, qualified_name, "struct", loc(node, path), vis);
     sym.fields = fields;
     Some(sym)
 }
@@ -279,7 +279,7 @@ fn extract_enum(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol::new(name, qualified_name, SymbolKind::Enum, loc(node, path), vis))
+    Some(Symbol::new(name, qualified_name, "enum", loc(node, path), vis))
 }
 
 fn extract_trait(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
@@ -287,7 +287,7 @@ fn extract_trait(node: &Node, source: &str, path: &Path, prefix: &str) -> Option
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol::new(name, qualified_name, SymbolKind::Trait, loc(node, path), vis))
+    Some(Symbol::new(name, qualified_name, "trait", loc(node, path), vis))
 }
 
 fn extract_impl(
@@ -313,7 +313,7 @@ fn extract_impl(
         format!("impl {}", type_name)
     };
 
-    let mut sym = Symbol::new(impl_name, qualified_name.clone(), SymbolKind::Impl, loc(node, path), Visibility::Private);
+    let mut sym = Symbol::new(impl_name, qualified_name.clone(), "impl", loc(node, path), Visibility::Private);
     sym.attributes = outer_attrs.to_vec();
     ir.symbols.push(sym);
 
@@ -321,7 +321,7 @@ fn extract_impl(
         ir.dependencies.push(Dependency {
             from_qualified: qualified_name.clone(),
             to_name: tr.clone(),
-            kind: DepKind::TraitImpl,
+            kind: DepKind::Implements,
             loc: loc(node, path),
         });
     }
@@ -390,7 +390,7 @@ fn extract_const(node: &Node, source: &str, path: &Path, prefix: &str) -> Option
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol::new(name, qualified_name, SymbolKind::Const, loc(node, path), vis))
+    Some(Symbol::new(name, qualified_name, "const", loc(node, path), vis))
 }
 
 fn extract_type_alias(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
@@ -398,7 +398,7 @@ fn extract_type_alias(node: &Node, source: &str, path: &Path, prefix: &str) -> O
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol::new(name, qualified_name, SymbolKind::TypeAlias, loc(node, path), vis))
+    Some(Symbol::new(name, qualified_name, "type", loc(node, path), vis))
 }
 
 fn extract_mod(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
@@ -406,7 +406,7 @@ fn extract_mod(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<S
     let vis = get_visibility_with_source(node, source);
     let qualified_name = format!("{}::{}", prefix, name);
 
-    Some(Symbol::new(name, qualified_name, SymbolKind::Module, loc(node, path), vis))
+    Some(Symbol::new(name, qualified_name, "mod", loc(node, path), vis))
 }
 
 #[cfg(test)]
@@ -433,7 +433,7 @@ mod tests {
         let ir = parse_file(Path::new("src/main.rs"), source).unwrap();
         assert_eq!(ir.symbols.len(), 1);
         assert_eq!(ir.symbols[0].name, "hello");
-        assert_eq!(ir.symbols[0].kind, SymbolKind::Function);
+        assert_eq!(ir.symbols[0].kind, "fn");
         assert_eq!(ir.symbols[0].visibility, Visibility::Public);
         assert_eq!(ir.symbols[0].params.len(), 1);
         assert_eq!(ir.symbols[0].params[0].name, "x");
@@ -451,7 +451,7 @@ pub struct Point {
         let structs: Vec<_> = ir
             .symbols
             .iter()
-            .filter(|s| s.kind == SymbolKind::Struct)
+            .filter(|s| s.kind == "struct")
             .collect();
         assert_eq!(structs.len(), 1);
         assert_eq!(structs[0].name, "Point");

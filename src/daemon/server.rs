@@ -252,7 +252,7 @@ fn dispatch_request(
 
 fn dispatch_ls(args: &str, format: &str, index: &Index) -> Response {
     use crate::format::OutputFormat;
-    use crate::commands::ls::parse_kind_filter;
+    use crate::query::parser::normalize_kind_filter;
 
     // Parse args: "kind_type --in path" or just "kind_type"
     let (kind_str, in_path) = if let Some(pos) = args.find("--in ") {
@@ -266,7 +266,7 @@ fn dispatch_ls(args: &str, format: &str, index: &Index) -> Response {
     let kind_filter = if kind_str.is_empty() {
         None
     } else {
-        parse_kind_filter(kind_str)
+        normalize_kind_filter(kind_str)
     };
 
     let mut symbols: Vec<_> = if let Some(ref kind) = kind_filter {

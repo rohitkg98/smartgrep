@@ -17,7 +17,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(),
             qualified_name: "crate::alpha::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 10, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn foo(x: i32) -> i32".to_string()),
@@ -30,7 +30,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "Bar".to_string(),
             qualified_name: "crate::alpha::Bar".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 20, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -46,7 +46,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(),
             qualified_name: "crate::beta::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 5, col: 1 },
             visibility: Visibility::Private,
             signature: Some("fn foo()".to_string()),
@@ -59,7 +59,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "Baz".to_string(),
             qualified_name: "crate::beta::Baz".to_string(),
-            kind: SymbolKind::Trait,
+            kind: "trait".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 15, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -72,7 +72,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "process".to_string(),
             qualified_name: "crate::alpha::Bar::process".to_string(),
-            kind: SymbolKind::Method,
+            kind: "method".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 32, col: 5 },
             visibility: Visibility::Public,
             signature: Some("pub fn process(&self)".to_string()),
@@ -85,7 +85,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "run".to_string(),
             qualified_name: "crate::commands::run::run".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_c.clone(), line: 1, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn run() -> Result<()>".to_string()),
@@ -98,7 +98,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "BigStruct".to_string(),
             qualified_name: "crate::alpha::BigStruct".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 50, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -121,13 +121,13 @@ fn test_ir() -> Ir {
         Dependency {
             from_qualified: "crate::beta::foo".to_string(),
             to_name: "Bar".to_string(),
-            kind: DepKind::TypeReference,
+            kind: DepKind::TypeRef,
             loc: SourceLoc { file: file_b.clone(), line: 6, col: 10 },
         },
         Dependency {
             from_qualified: "crate::alpha::Bar".to_string(),
             to_name: "Baz".to_string(),
-            kind: DepKind::TraitImpl,
+            kind: DepKind::Implements,
             loc: SourceLoc { file: file_a.clone(), line: 30, col: 1 },
         },
         Dependency {
@@ -139,7 +139,7 @@ fn test_ir() -> Ir {
         Dependency {
             from_qualified: "crate::commands::run::run".to_string(),
             to_name: "Bar".to_string(),
-            kind: DepKind::FunctionCall,
+            kind: DepKind::Call,
             loc: SourceLoc { file: file_c.clone(), line: 3, col: 5 },
         },
     ];
@@ -371,7 +371,7 @@ fn query_deps_of_symbol() {
     let rows = run_query("deps Bar");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get("to").unwrap(), "Baz");
-    assert_eq!(rows[0].get("dep_kind").unwrap(), "trait_impl");
+    assert_eq!(rows[0].get("dep_kind").unwrap(), "implements");
 }
 
 #[test]
@@ -615,7 +615,7 @@ fn java_test_ir() -> Ir {
         Symbol {
             name: "ProductController".to_string(),
             qualified_name: "com.example.ecommerce.catalog.controller.ProductController".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 5, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -628,7 +628,7 @@ fn java_test_ir() -> Ir {
         Symbol {
             name: "listProducts".to_string(),
             qualified_name: "com.example.ecommerce.catalog.controller.ProductController.listProducts".to_string(),
-            kind: SymbolKind::Method,
+            kind: "method".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 12, col: 5 },
             visibility: Visibility::Public,
             signature: None,
@@ -641,7 +641,7 @@ fn java_test_ir() -> Ir {
         Symbol {
             name: "InventoryService".to_string(),
             qualified_name: "com.example.ecommerce.catalog.service.InventoryService".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 3, col: 1 },
             visibility: Visibility::Public,
             signature: None,

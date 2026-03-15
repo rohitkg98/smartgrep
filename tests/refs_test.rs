@@ -13,7 +13,7 @@ fn refs_test_ir() -> Ir {
         Symbol {
             name: "Config".to_string(),
             qualified_name: "crate::alpha::Config".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 5, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -28,7 +28,7 @@ fn refs_test_ir() -> Ir {
         Symbol {
             name: "run".to_string(),
             qualified_name: "crate::beta::run".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 10, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn run(cfg: &Config)".to_string()),
@@ -41,7 +41,7 @@ fn refs_test_ir() -> Ir {
         Symbol {
             name: "init".to_string(),
             qualified_name: "crate::gamma::init".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_c.clone(), line: 3, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn init() -> Config".to_string()),
@@ -58,14 +58,14 @@ fn refs_test_ir() -> Ir {
         Dependency {
             from_qualified: "crate::beta::run".to_string(),
             to_name: "Config".to_string(),
-            kind: DepKind::TypeReference,
+            kind: DepKind::TypeRef,
             loc: SourceLoc { file: file_b.clone(), line: 10, col: 20 },
         },
         // gamma::init also references Config as a type
         Dependency {
             from_qualified: "crate::gamma::init".to_string(),
             to_name: "Config".to_string(),
-            kind: DepKind::TypeReference,
+            kind: DepKind::TypeRef,
             loc: SourceLoc { file: file_c.clone(), line: 3, col: 30 },
         },
         // beta::run imports alpha::Config
@@ -79,7 +79,7 @@ fn refs_test_ir() -> Ir {
         Dependency {
             from_qualified: "crate::gamma::init".to_string(),
             to_name: "run".to_string(),
-            kind: DepKind::FunctionCall,
+            kind: DepKind::Call,
             loc: SourceLoc { file: file_c.clone(), line: 5, col: 5 },
         },
     ];
@@ -123,7 +123,7 @@ fn refs_to_function_call() {
     let index = build_refs_test_index();
     let refs = index.refs_to("run");
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].kind, DepKind::FunctionCall);
+    assert_eq!(refs[0].kind, DepKind::Call);
     assert_eq!(refs[0].from_qualified, "crate::gamma::init");
 }
 
@@ -138,7 +138,7 @@ fn refs_to_nonexistent_returns_empty() {
 fn refs_to_dep_kinds_are_correct() {
     let index = build_refs_test_index();
     let refs = index.refs_to("Config");
-    assert!(refs.iter().all(|d| d.kind == DepKind::TypeReference));
+    assert!(refs.iter().all(|d| d.kind == DepKind::TypeRef));
 }
 
 #[test]

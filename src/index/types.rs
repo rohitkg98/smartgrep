@@ -3,11 +3,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ir::types::{Dependency, Symbol, SymbolKind};
+use crate::ir::types::{Dependency, Symbol};
+
+pub const INDEX_VERSION: u32 = 2;
 
 /// The queryable index: symbols + dependencies + lookup tables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Index {
+    #[serde(default = "default_version")]
+    pub version: u32,
     pub symbols: Vec<Symbol>,
     pub deps: Vec<Dependency>,
     /// name → symbol indices (multiple symbols can share a name)
@@ -18,6 +22,10 @@ pub struct Index {
     pub qualified_lookup: HashMap<String, usize>,
     /// qualified_name → dep indices where dep.to_name matches
     pub reverse_deps: HashMap<String, Vec<usize>>,
+}
+
+fn default_version() -> u32 {
+    0
 }
 
 impl Index {
@@ -43,8 +51,27 @@ impl Index {
     }
 
     /// Look up all symbols of a given kind.
-    pub fn by_kind(&self, kind: &SymbolKind) -> Vec<&Symbol> {
-        self.symbols.iter().filter(|s| &s.kind == kind).collect()
+    pub fn by_kind(&self, kind: &str) -> Vec<&Symbol> {
+        self.symbols.iter().filter(|s| s.kind == kind).collect()
+    }
+
+    /// Look up symbols matching any of the given kinds.
+    pub fn by_kinds(&self, kinds: &[&str]) -> Vec<&Symbol> {
+        self.symbols.iter().filter(|s| kinds.contains(&s.kind.as_str())).collect()
+    }
+
+    /// Infer which languages are present from file extensions.
+    pub fn languages(&self) -> Vec<&'static str> {
+        let mut langs = std::collections::HashSet::new();
+        for file in self.file_lookup.keys() {
+            match file.extension().and_then(|e| e.to_str()) {
+                Some("rs") => { langs.insert("rust"); }
+                Some("java") => { langs.insert("java"); }
+                Some("go") => { langs.insert("go"); }
+                _ => {}
+            }
+        }
+        langs.into_iter().collect()
     }
 
     /// Get outgoing dependencies from a symbol (by qualified name).

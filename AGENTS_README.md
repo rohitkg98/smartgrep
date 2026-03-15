@@ -60,6 +60,23 @@ smartgrep query "<dsl>"          # composable query — use this for most questi
 
 ---
 
+## Language-native vocabulary
+
+Symbols use language-native kind strings, not a shared enum. The `kind` field on each symbol is a plain string:
+
+| Language | Kinds |
+|---|---|
+| **Rust** | fn, method, struct, enum, trait, impl, const, type, mod |
+| **Java** | class, interface, enum, method, record |
+| **Go** | func, method, struct, interface, const, type |
+
+**Dependency kinds:** Call, TypeRef, Implements (renamed from FunctionCall, TypeReference, TraitImpl)
+
+**`interfaces` vs `traits`:**
+- `interfaces` = kind="interface" (Java and Go only)
+- `traits` = kind="trait" (Rust only)
+- These are distinct source keywords — they do not alias each other
+
 ## Query DSL
 
 ### Grammar
@@ -67,11 +84,12 @@ smartgrep query "<dsl>"          # composable query — use this for most questi
 ```
 batch       = query (";" query)*
 query       = source ("|" stage)*
-source      = source_kind [in_clause] [where_clause]
+source      = source_kind [implementing_clause] [in_clause] [where_clause]
 source_kind = "symbols" | "structs" | "functions" | "methods" | "traits"
             | "enums" | "impls" | "consts" | "types" | "modules"
             | "classes" | "interfaces" | "records"
             | "symbol" <name> | "deps" [<name>] | "refs" [<name>]
+implementing_clause = "implementing" <name>
 in_clause   = "in" '<path_substring>'
 where_clause = "where" condition (("and" | "or") condition)*
 condition   = field op value
@@ -123,10 +141,10 @@ Find symbols by their decorators/attributes — the most powerful pattern for Ja
 smartgrep query "classes where attributes contains '@RestController'; methods where attributes contains '@RequestMapping' or attributes contains '@GetMapping' or attributes contains '@PostMapping' | with signature"
 
 # All gRPC service implementations
-smartgrep query "classes where attributes contains 'implements' and file contains 'service/'"
+smartgrep query "classes implementing GrpcService and file contains 'service/'"
 
-# Go structs implementing an interface pattern
-smartgrep query "methods where parent = HttpHandler | with signature | show name, parent, signature"
+# Go structs implementing an interface (structural typing — matched by method set)
+smartgrep query "structs implementing Handler | with fields"
 ```
 
 ### Pattern 3 — Dependency mapping
@@ -198,7 +216,7 @@ smartgrep map --format json | jq '.[].dir'
 
 ### Pattern 7 — Cross-language queries
 
-Same DSL works across Rust, Java, and Go:
+Same DSL works across Rust, Java, and Go. Use language-native kinds:
 
 ```bash
 # Go: methods on a specific receiver type
@@ -207,11 +225,20 @@ smartgrep query "methods where parent = Server | with signature"
 # Go: all exported functions (capitalized = public)
 smartgrep query "functions where visibility = public and file contains 'internal/'"
 
+# Go: structs implementing an interface (structural typing — matched by method set)
+smartgrep query "structs implementing Handler"
+
 # Java: find all repository interfaces
 smartgrep query "interfaces where name ends_with Repository | with fields"
 
+# Java: classes implementing an interface
+smartgrep query "classes implementing Serializable"
+
 # Rust: all pub traits with their deps
 smartgrep query "traits where visibility = public | with deps | show name, file, deps"
+
+# Rust: structs implementing a trait
+smartgrep query "structs implementing Display"
 ```
 
 ---

@@ -182,7 +182,7 @@ fn extract_function(node: &Node, source: &str, path: &Path, prefix: &str) -> Opt
     Some(Symbol {
         name: name.clone(),
         qualified_name: qualified(prefix, &name),
-        kind: SymbolKind::Function,
+        kind: "func".to_string(),
         loc: loc(node, path),
         visibility: go_visibility(&name),
         signature: Some(sig),
@@ -219,7 +219,7 @@ fn extract_method(node: &Node, source: &str, path: &Path, prefix: &str) -> Optio
     Some(Symbol {
         name,
         qualified_name,
-        kind: SymbolKind::Method,
+        kind: "method".to_string(),
         loc: loc(node, path),
         visibility: go_visibility(&node.child_by_field_name("name").map(|n| node_text(&n, source)).unwrap_or("")),
         signature: Some(sig),
@@ -289,7 +289,7 @@ fn extract_type_spec(node: &Node, source: &str, path: &Path, prefix: &str, ir: &
             ir.symbols.push(Symbol {
                 name: name.clone(),
                 qualified_name: qualified(prefix, &name),
-                kind: SymbolKind::Struct,
+                kind: "struct".to_string(),
                 loc: loc(node, path),
                 visibility: go_visibility(&name),
                 signature: None,
@@ -305,7 +305,7 @@ fn extract_type_spec(node: &Node, source: &str, path: &Path, prefix: &str, ir: &
             ir.symbols.push(Symbol {
                 name: name.clone(),
                 qualified_name: qualified(prefix, &name),
-                kind: SymbolKind::Trait,
+                kind: "interface".to_string(),
                 loc: loc(node, path),
                 visibility: go_visibility(&name),
                 signature: None,
@@ -324,7 +324,7 @@ fn extract_type_spec(node: &Node, source: &str, path: &Path, prefix: &str, ir: &
             ir.symbols.push(Symbol {
                 name: name.clone(),
                 qualified_name: qualified(prefix, &name),
-                kind: SymbolKind::TypeAlias,
+                kind: "type".to_string(),
                 loc: loc(node, path),
                 visibility: go_visibility(&name),
                 signature: Some(format!("type {} {}", name, type_text)),
@@ -356,7 +356,7 @@ fn extract_type_alias(node: &Node, source: &str, path: &Path, prefix: &str, ir: 
     ir.symbols.push(Symbol {
         name: name.clone(),
         qualified_name: qualified(prefix, &name),
-        kind: SymbolKind::TypeAlias,
+        kind: "type".to_string(),
         loc: loc(node, path),
         visibility: go_visibility(&name),
         signature: Some(format!("type {} = {}", name, type_text)),
@@ -489,7 +489,7 @@ fn extract_method_elem(
     Some(Symbol {
         name,
         qualified_name,
-        kind: SymbolKind::Method,
+        kind: "method".to_string(),
         loc: loc(node, path),
         visibility: Visibility::Public,
         signature: Some(sig),
@@ -543,7 +543,7 @@ fn extract_const_spec(node: &Node, source: &str, path: &Path, prefix: &str, ir: 
             ir.symbols.push(Symbol {
                 name: name.clone(),
                 qualified_name: qualified(prefix, &name),
-                kind: SymbolKind::Const,
+                kind: "const".to_string(),
                 loc: loc(&child, path),
                 visibility: go_visibility(&name),
                 signature: Some(sig),
@@ -671,7 +671,7 @@ mod tests {
     fn test_parse_simple_struct() {
         let source = "package main\n\ntype Foo struct { X int }";
         let ir = parse_file(Path::new("foo.go"), source).unwrap();
-        let structs: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Struct).collect();
+        let structs: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "struct").collect();
         assert_eq!(structs.len(), 1);
         assert_eq!(structs[0].name, "Foo");
         assert_eq!(structs[0].visibility, Visibility::Public);
@@ -681,7 +681,7 @@ mod tests {
     fn test_parse_simple_function() {
         let source = "package main\n\nfunc Hello(name string) string { return name }";
         let ir = parse_file(Path::new("foo.go"), source).unwrap();
-        let funcs: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Function).collect();
+        let funcs: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "func").collect();
         assert_eq!(funcs.len(), 1);
         assert_eq!(funcs[0].name, "Hello");
         assert_eq!(funcs[0].visibility, Visibility::Public);
@@ -691,7 +691,7 @@ mod tests {
     fn test_parse_interface() {
         let source = "package main\n\ntype Reader interface { Read(p []byte) (int, error) }";
         let ir = parse_file(Path::new("foo.go"), source).unwrap();
-        let traits: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Trait).collect();
+        let traits: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "interface").collect();
         assert_eq!(traits.len(), 1);
         assert_eq!(traits[0].name, "Reader");
     }
@@ -709,7 +709,7 @@ mod tests {
         let source = "package main\n\ntype Foo struct{}\nfunc (f *Foo) Bar() {}";
         let ir = parse_file(Path::new("foo.go"), source).unwrap();
         let bar = ir.symbols.iter().find(|s| s.name == "Bar").unwrap();
-        assert_eq!(bar.kind, SymbolKind::Method);
+        assert_eq!(bar.kind, "method");
         assert_eq!(bar.parent.as_deref(), Some("Foo"));
     }
 
@@ -726,7 +726,7 @@ mod tests {
     fn test_const_extraction() {
         let source = "package main\n\nconst MaxSize = 1024";
         let ir = parse_file(Path::new("foo.go"), source).unwrap();
-        let consts: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::Const).collect();
+        let consts: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "const").collect();
         assert_eq!(consts.len(), 1);
         assert_eq!(consts[0].name, "MaxSize");
         assert_eq!(consts[0].visibility, Visibility::Public);
@@ -736,7 +736,7 @@ mod tests {
     fn test_type_alias() {
         let source = "package main\n\ntype MyInt = int";
         let ir = parse_file(Path::new("foo.go"), source).unwrap();
-        let aliases: Vec<_> = ir.symbols.iter().filter(|s| s.kind == SymbolKind::TypeAlias).collect();
+        let aliases: Vec<_> = ir.symbols.iter().filter(|s| s.kind == "type").collect();
         assert_eq!(aliases.len(), 1);
         assert_eq!(aliases[0].name, "MyInt");
     }

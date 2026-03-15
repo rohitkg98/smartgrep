@@ -13,7 +13,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(),
             qualified_name: "crate::alpha::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 10, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn foo(x: Bar) -> i32".to_string()),
@@ -26,7 +26,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "Bar".to_string(),
             qualified_name: "crate::alpha::Bar".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 20, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -41,7 +41,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(), // duplicate name in different module
             qualified_name: "crate::beta::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 5, col: 1 },
             visibility: Visibility::Private,
             signature: Some("fn foo()".to_string()),
@@ -57,19 +57,19 @@ fn test_ir() -> Ir {
         Dependency {
             from_qualified: "crate::alpha::foo".to_string(),
             to_name: "crate::alpha::Bar".to_string(),
-            kind: DepKind::TypeReference,
+            kind: DepKind::TypeRef,
             loc: SourceLoc { file: file_a.clone(), line: 10, col: 15 },
         },
         Dependency {
             from_qualified: "crate::alpha::foo".to_string(),
             to_name: "std::fmt::Display".to_string(),
-            kind: DepKind::TraitImpl,
+            kind: DepKind::Implements,
             loc: SourceLoc { file: file_a.clone(), line: 11, col: 5 },
         },
         Dependency {
             from_qualified: "crate::beta::foo".to_string(),
             to_name: "crate::alpha::Bar".to_string(),
-            kind: DepKind::FunctionCall,
+            kind: DepKind::Call,
             loc: SourceLoc { file: file_b.clone(), line: 6, col: 10 },
         },
         Dependency {
@@ -113,7 +113,7 @@ fn deps_duplicate_name_returns_multiple_groups() {
     let beta = results.iter().find(|g| g.qualified_name == "crate::beta::foo").unwrap();
     assert_eq!(beta.deps.len(), 1);
     assert_eq!(beta.deps[0].to_name, "crate::alpha::Bar");
-    assert_eq!(beta.deps[0].kind, DepKind::FunctionCall);
+    assert_eq!(beta.deps[0].kind, DepKind::Call);
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn deps_symbol_with_no_deps_returns_empty_group() {
         symbols: vec![Symbol {
             name: "Lonely".to_string(),
             qualified_name: "crate::lonely::Lonely".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: PathBuf::from("src/lonely.rs"), line: 1, col: 1 },
             visibility: Visibility::Public,
             signature: None,

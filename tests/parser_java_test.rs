@@ -14,10 +14,9 @@ fn fixture_has_classes() {
     let structs: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Struct && s.parent.is_none())
-        .filter(|s| s.name != "Point")
+        .filter(|s| s.kind == "class" && s.parent.is_none())
         .collect();
-    // Config, InternalHelper, Container (top-level classes, excluding Point record)
+    // Config, InternalHelper, Container (top-level classes)
     assert_eq!(structs.len(), 3);
     let names: Vec<&str> = structs.iter().map(|s| s.name.as_str()).collect();
     assert!(names.contains(&"Config"));
@@ -31,7 +30,7 @@ fn fixture_config_has_fields() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "class")
         .expect("should find Config");
     assert_eq!(config.fields.len(), 3);
     let field_names: Vec<&str> = config.fields.iter().map(|f| f.name.as_str()).collect();
@@ -46,7 +45,7 @@ fn fixture_config_field_visibility() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "class")
         .unwrap();
     let name_field = config.fields.iter().find(|f| f.name == "name").unwrap();
     assert_eq!(name_field.visibility, Visibility::Private);
@@ -63,7 +62,7 @@ fn fixture_has_interface() {
     let traits: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Trait)
+        .filter(|s| s.kind == "interface")
         .collect();
     // Processor<T>, Action (sealed), NestedInterface (inside Container)
     assert_eq!(traits.len(), 3);
@@ -79,7 +78,7 @@ fn fixture_has_enum() {
     let enums: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Enum)
+        .filter(|s| s.kind == "enum")
         .collect();
     assert_eq!(enums.len(), 2);
     let names: Vec<&str> = enums.iter().map(|s| s.name.as_str()).collect();
@@ -93,7 +92,7 @@ fn fixture_has_record() {
     let point = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Point" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Point" && s.kind == "record")
         .expect("should find Point record");
     // Record components -> fields and params
     assert_eq!(point.fields.len(), 2);
@@ -108,7 +107,7 @@ fn fixture_has_methods() {
     let methods: Vec<_> = ir
         .symbols
         .iter()
-        .filter(|s| s.kind == SymbolKind::Method)
+        .filter(|s| s.kind == "method")
         .collect();
     let method_names: Vec<&str> = methods.iter().map(|s| s.name.as_str()).collect();
     // Config: Config (constructor), getName, addValue, maxSize
@@ -130,7 +129,7 @@ fn fixture_method_has_correct_parent() {
     let get_name = ir
         .symbols
         .iter()
-        .find(|s| s.name == "getName" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "getName" && s.kind == "method")
         .unwrap();
     assert_eq!(get_name.parent.as_deref(), Some("Config"));
 }
@@ -141,7 +140,7 @@ fn fixture_constructor_is_method() {
     let ctor = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "Config" && s.kind == "method")
         .expect("should find Config constructor");
     assert_eq!(ctor.parent.as_deref(), Some("Config"));
     assert_eq!(ctor.params.len(), 1);
@@ -168,7 +167,7 @@ fn fixture_has_trait_impl_deps() {
     let trait_impls: Vec<_> = ir
         .dependencies
         .iter()
-        .filter(|d| d.kind == DepKind::TraitImpl)
+        .filter(|d| d.kind == DepKind::Implements)
         .collect();
     // Config implements Serializable
     // InternalHelper extends Config, implements Processor<String>
@@ -183,7 +182,7 @@ fn fixture_qualified_names_use_package() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "class")
         .unwrap();
     assert_eq!(config.qualified_name, "com.example.demo.Config");
 }
@@ -205,7 +204,7 @@ fn fixture_annotations_collected() {
     let helper = ir
         .symbols
         .iter()
-        .find(|s| s.name == "InternalHelper" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "InternalHelper" && s.kind == "class")
         .expect("should find InternalHelper");
     assert!(!helper.attributes.is_empty());
     assert!(helper.attributes[0].contains("Deprecated"));
@@ -217,7 +216,7 @@ fn fixture_method_has_return_type() {
     let get_name = ir
         .symbols
         .iter()
-        .find(|s| s.name == "getName" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "getName" && s.kind == "method")
         .unwrap();
     assert_eq!(get_name.return_type.as_deref(), Some("String"));
 }
@@ -228,7 +227,7 @@ fn fixture_method_has_params() {
     let add_value = ir
         .symbols
         .iter()
-        .find(|s| s.name == "addValue" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "addValue" && s.kind == "method")
         .unwrap();
     assert_eq!(add_value.params.len(), 1);
     assert_eq!(add_value.params[0].name, "v");
@@ -242,7 +241,7 @@ fn fixture_enum_method_has_parent() {
         .iter()
         .find(|s| s.name == "label" && s.parent.as_deref() == Some("Status"))
         .expect("should find label method on Status enum");
-    assert_eq!(label.kind, SymbolKind::Method);
+    assert_eq!(label.kind, "method");
 }
 
 #[test]
@@ -251,14 +250,14 @@ fn fixture_class_visibility() {
     let config = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Config" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Config" && s.kind == "class")
         .unwrap();
     assert_eq!(config.visibility, Visibility::Public);
 
     let helper = ir
         .symbols
         .iter()
-        .find(|s| s.name == "InternalHelper" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "InternalHelper" && s.kind == "class")
         .unwrap();
     // No public modifier -> package-private -> Crate
     assert_eq!(helper.visibility, Visibility::Crate);
@@ -274,16 +273,16 @@ fn fixture_inner_records_in_sealed_interface_found() {
     let create = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Create" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Create" && s.kind == "record")
         .expect("should find inner record Create");
-    assert_eq!(create.kind, SymbolKind::Struct);
+    assert_eq!(create.kind, "record");
 
     let delete = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Delete" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Delete" && s.kind == "record")
         .expect("should find inner record Delete");
-    assert_eq!(delete.kind, SymbolKind::Struct);
+    assert_eq!(delete.kind, "record");
 }
 
 #[test]
@@ -292,14 +291,14 @@ fn fixture_inner_record_qualified_name_includes_outer() {
     let create = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Create" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Create" && s.kind == "record")
         .unwrap();
     assert_eq!(create.qualified_name, "com.example.demo.Action.Create");
 
     let delete = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Delete" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Delete" && s.kind == "record")
         .unwrap();
     assert_eq!(delete.qualified_name, "com.example.demo.Action.Delete");
 }
@@ -310,14 +309,14 @@ fn fixture_inner_record_has_parent() {
     let create = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Create" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Create" && s.kind == "record")
         .unwrap();
     assert_eq!(create.parent.as_deref(), Some("Action"));
 
     let delete = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Delete" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Delete" && s.kind == "record")
         .unwrap();
     assert_eq!(delete.parent.as_deref(), Some("Action"));
 }
@@ -328,7 +327,7 @@ fn fixture_inner_record_has_fields_and_params() {
     let create = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Create" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Create" && s.kind == "record")
         .unwrap();
     assert_eq!(create.fields.len(), 1);
     assert_eq!(create.fields[0].name, "name");
@@ -343,12 +342,12 @@ fn fixture_inner_record_implements_dep() {
         .dependencies
         .iter()
         .find(|d| {
-            d.kind == DepKind::TraitImpl
+            d.kind == DepKind::Implements
                 && d.from_qualified == "com.example.demo.Action.Create"
                 && d.to_name == "Action"
         })
         .expect("should find TraitImpl dep from Create to Action");
-    assert_eq!(create_impl.kind, DepKind::TraitImpl);
+    assert_eq!(create_impl.kind, DepKind::Implements);
 }
 
 #[test]
@@ -357,7 +356,7 @@ fn fixture_inner_class_in_class() {
     let nested = ir
         .symbols
         .iter()
-        .find(|s| s.name == "Nested" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "Nested" && s.kind == "class")
         .expect("should find inner class Nested");
     assert_eq!(nested.parent.as_deref(), Some("Container"));
     assert_eq!(nested.qualified_name, "com.example.demo.Container.Nested");
@@ -369,7 +368,7 @@ fn fixture_inner_class_method_found() {
     let method = ir
         .symbols
         .iter()
-        .find(|s| s.name == "nestedMethod" && s.kind == SymbolKind::Method)
+        .find(|s| s.name == "nestedMethod" && s.kind == "method")
         .expect("should find nestedMethod in inner class Nested");
     assert_eq!(method.parent.as_deref(), Some("Nested"));
 }
@@ -380,7 +379,7 @@ fn fixture_inner_enum_in_class() {
     let nested_enum = ir
         .symbols
         .iter()
-        .find(|s| s.name == "NestedEnum" && s.kind == SymbolKind::Enum)
+        .find(|s| s.name == "NestedEnum" && s.kind == "enum")
         .expect("should find inner enum NestedEnum");
     assert_eq!(nested_enum.parent.as_deref(), Some("Container"));
     assert_eq!(nested_enum.qualified_name, "com.example.demo.Container.NestedEnum");
@@ -392,7 +391,7 @@ fn fixture_inner_interface_in_class() {
     let nested_iface = ir
         .symbols
         .iter()
-        .find(|s| s.name == "NestedInterface" && s.kind == SymbolKind::Trait)
+        .find(|s| s.name == "NestedInterface" && s.kind == "interface")
         .expect("should find inner interface NestedInterface");
     assert_eq!(nested_iface.parent.as_deref(), Some("Container"));
     assert_eq!(nested_iface.qualified_name, "com.example.demo.Container.NestedInterface");
@@ -404,7 +403,7 @@ fn fixture_inner_record_in_class() {
     let nested_rec = ir
         .symbols
         .iter()
-        .find(|s| s.name == "NestedRecord" && s.kind == SymbolKind::Struct)
+        .find(|s| s.name == "NestedRecord" && s.kind == "record")
         .expect("should find inner record NestedRecord");
     assert_eq!(nested_rec.parent.as_deref(), Some("Container"));
     assert_eq!(nested_rec.qualified_name, "com.example.demo.Container.NestedRecord");

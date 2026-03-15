@@ -1,5 +1,5 @@
 use crate::format::path_alias;
-use crate::ir::types::{Ir, Symbol, SymbolKind};
+use crate::ir::types::{Ir, Symbol};
 
 /// Format IR symbols as greppable text output.
 /// Each line: kind\tname\tfile:line\t[extra]
@@ -28,7 +28,7 @@ pub fn format_symbols(ir: &Ir) -> String {
     let kind_width = ir
         .symbols
         .iter()
-        .map(|s| format!("{}", s.kind).len())
+        .map(|s| s.kind.len())
         .max()
         .unwrap_or(0);
     let name_width = ir
@@ -39,7 +39,7 @@ pub fn format_symbols(ir: &Ir) -> String {
         .unwrap_or(0);
 
     for sym in &ir.symbols {
-        let kind_str = format!("{}", sym.kind);
+        let kind_str = &sym.kind;
         let name = display_name(sym);
         let raw_file = sym.loc.file.to_string_lossy();
         let file_str = if let Some(ref a) = alias {
@@ -79,8 +79,8 @@ pub fn display_name(sym: &Symbol) -> String {
 }
 
 pub fn build_extra(sym: &Symbol) -> String {
-    match sym.kind {
-        SymbolKind::Function | SymbolKind::Method => {
+    match sym.kind.as_str() {
+        "fn" | "func" | "method" => {
             let params: Vec<String> = sym
                 .params
                 .iter()
@@ -100,7 +100,7 @@ pub fn build_extra(sym: &Symbol) -> String {
                 .unwrap_or_default();
             format!("({}){}", params.join(", "), ret)
         }
-        SymbolKind::Struct => {
+        "struct" | "class" | "record" => {
             if sym.fields.is_empty() {
                 String::new()
             } else {

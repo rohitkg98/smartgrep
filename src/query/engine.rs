@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 
+use std::collections::HashSet;
+
 use crate::format::path_alias;
 use crate::index::types::Index;
-use crate::ir::types::{Dependency, Symbol, SymbolKind, Visibility};
+use crate::ir::types::{DepKind, Dependency, Symbol, Visibility};
 
 use super::ast::*;
 
@@ -68,6 +70,7 @@ fn resolve_source(source: &Source, index: &Index) -> Result<Vec<Row>> {
         Source::Symbols {
             kind_filter,
             in_file,
+            implementing,
             where_clause,
         } => {
             let symbols: Vec<&Symbol> = if let Some(ref file_path) = in_file {
@@ -88,7 +91,27 @@ fn resolve_source(source: &Source, index: &Index) -> Result<Vec<Row>> {
             // Apply kind filter if both in_file and kind_filter are set
             let symbols: Vec<&Symbol> = if in_file.is_some() && kind_filter.is_some() {
                 let sk = kind_filter.as_ref().unwrap();
-                symbols.into_iter().filter(|s| s.kind == *sk).collect()
+                symbols.into_iter().filter(|s| s.kind == sk.as_str()).collect()
+            } else {
+                symbols
+            };
+
+            // Apply implementing filter
+            let symbols = if let Some(ref trait_name) = implementing {
+                const GO_KINDS: &[&str] = &["func", "struct", "interface", "method", "const", "type"];
+                if kind_filter.as_deref().map(|k| GO_KINDS.contains(&k)).unwrap_or(false) {
+                    return Err(anyhow::anyhow!(
+                        "Go uses structural typing — `implementing` is not valid for Go.\n\
+                         To find types that satisfy an interface, check which types have \
+                         the required methods:\n  \
+                         methods where name = <MethodName> | show parent, file"
+                    ));
+                }
+                let implementors: HashSet<&str> = index.deps.iter()
+                    .filter(|d| d.kind == DepKind::Implements && d.to_name == trait_name.as_str())
+                    .map(|d| d.from_qualified.as_str())
+                    .collect();
+                symbols.into_iter().filter(|s| implementors.contains(s.qualified_name.as_str())).collect()
             } else {
                 symbols
             };
@@ -154,7 +177,7 @@ fn symbol_to_row(sym: &Symbol) -> Row {
     let mut row = Row::new();
     row.set("name", sym.name.clone());
     row.set("qualified_name", sym.qualified_name.clone());
-    row.set("kind", format!("{}", sym.kind));
+    row.set("kind", sym.kind.clone());
     row.set("file", sym.loc.file.to_string_lossy().to_string());
     row.set("line", sym.loc.line.to_string());
     row.set(
@@ -285,7 +308,7 @@ fn enrich_row(row: &mut Row, enrichment: &Enrichment, index: &Index) {
                     .symbols
                     .iter()
                     .filter(|s| {
-                        s.kind == SymbolKind::Method
+                        s.kind == "method"
                             && s.parent.as_deref() == Some(n.as_str())
                     })
                     .collect();

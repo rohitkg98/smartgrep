@@ -13,7 +13,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(),
             qualified_name: "crate::alpha::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 10, col: 1 },
             visibility: Visibility::Public,
             signature: Some("pub fn foo(x: i32) -> i32".to_string()),
@@ -26,7 +26,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "Bar".to_string(),
             qualified_name: "crate::alpha::Bar".to_string(),
-            kind: SymbolKind::Struct,
+            kind: "struct".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 20, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -41,7 +41,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "foo".to_string(), // duplicate name, different qualified
             qualified_name: "crate::beta::foo".to_string(),
-            kind: SymbolKind::Function,
+            kind: "fn".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 5, col: 1 },
             visibility: Visibility::Private,
             signature: Some("fn foo()".to_string()),
@@ -54,7 +54,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "Baz".to_string(),
             qualified_name: "crate::beta::Baz".to_string(),
-            kind: SymbolKind::Trait,
+            kind: "trait".to_string(),
             loc: SourceLoc { file: file_b.clone(), line: 15, col: 1 },
             visibility: Visibility::Public,
             signature: None,
@@ -67,7 +67,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "impl Baz for Bar".to_string(),
             qualified_name: "crate::alpha::Bar".to_string(), // shares qualified with struct
-            kind: SymbolKind::Impl,
+            kind: "impl".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 30, col: 1 },
             visibility: Visibility::Private,
             signature: None,
@@ -80,7 +80,7 @@ fn test_ir() -> Ir {
         Symbol {
             name: "process".to_string(),
             qualified_name: "crate::alpha::Bar::process".to_string(),
-            kind: SymbolKind::Method,
+            kind: "method".to_string(),
             loc: SourceLoc { file: file_a.clone(), line: 32, col: 5 },
             visibility: Visibility::Public,
             signature: Some("pub fn process(&self)".to_string()),
@@ -96,13 +96,13 @@ fn test_ir() -> Ir {
         Dependency {
             from_qualified: "crate::beta::foo".to_string(),
             to_name: "crate::alpha::Bar".to_string(),
-            kind: DepKind::TypeReference,
+            kind: DepKind::TypeRef,
             loc: SourceLoc { file: file_b.clone(), line: 6, col: 10 },
         },
         Dependency {
             from_qualified: "crate::alpha::Bar".to_string(),
             to_name: "Baz".to_string(),
-            kind: DepKind::TraitImpl,
+            kind: DepKind::Implements,
             loc: SourceLoc { file: file_a.clone(), line: 30, col: 1 },
         },
         Dependency {
@@ -134,7 +134,7 @@ fn by_name_single_result() {
     let index = build_test_index();
     let bars = index.by_name("Bar");
     assert_eq!(bars.len(), 1);
-    assert_eq!(bars[0].kind, SymbolKind::Struct);
+    assert_eq!(bars[0].kind, "struct");
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn by_qualified_finds_unique_symbol() {
     let sym = index.by_qualified("crate::beta::Baz");
     assert!(sym.is_some());
     assert_eq!(sym.unwrap().name, "Baz");
-    assert_eq!(sym.unwrap().kind, SymbolKind::Trait);
+    assert_eq!(sym.unwrap().kind, "trait");
 }
 
 #[test]
@@ -180,15 +180,15 @@ fn by_qualified_no_match() {
 #[test]
 fn by_kind_functions() {
     let index = build_test_index();
-    let fns = index.by_kind(&SymbolKind::Function);
+    let fns = index.by_kind("fn");
     assert_eq!(fns.len(), 2);
-    assert!(fns.iter().all(|s| s.kind == SymbolKind::Function));
+    assert!(fns.iter().all(|s| s.kind == "fn"));
 }
 
 #[test]
 fn by_kind_structs() {
     let index = build_test_index();
-    let structs = index.by_kind(&SymbolKind::Struct);
+    let structs = index.by_kind("struct");
     assert_eq!(structs.len(), 1);
     assert_eq!(structs[0].name, "Bar");
 }
@@ -196,7 +196,7 @@ fn by_kind_structs() {
 #[test]
 fn by_kind_methods() {
     let index = build_test_index();
-    let methods = index.by_kind(&SymbolKind::Method);
+    let methods = index.by_kind("method");
     assert_eq!(methods.len(), 1);
     assert_eq!(methods[0].name, "process");
 }
@@ -204,7 +204,7 @@ fn by_kind_methods() {
 #[test]
 fn by_kind_traits() {
     let index = build_test_index();
-    let traits = index.by_kind(&SymbolKind::Trait);
+    let traits = index.by_kind("trait");
     assert_eq!(traits.len(), 1);
     assert_eq!(traits[0].name, "Baz");
 }
@@ -212,7 +212,7 @@ fn by_kind_traits() {
 #[test]
 fn by_kind_impls() {
     let index = build_test_index();
-    let impls = index.by_kind(&SymbolKind::Impl);
+    let impls = index.by_kind("impl");
     assert_eq!(impls.len(), 1);
 }
 
@@ -222,7 +222,7 @@ fn deps_of_returns_outgoing_deps() {
     let deps = index.deps_of("crate::alpha::Bar");
     assert_eq!(deps.len(), 1);
     assert_eq!(deps[0].to_name, "Baz");
-    assert_eq!(deps[0].kind, DepKind::TraitImpl);
+    assert_eq!(deps[0].kind, DepKind::Implements);
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn refs_to_type_reference() {
     let index = build_test_index();
     let refs = index.refs_to("crate::alpha::Bar");
     assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].kind, DepKind::TypeReference);
+    assert_eq!(refs[0].kind, DepKind::TypeRef);
 }
 
 #[test]

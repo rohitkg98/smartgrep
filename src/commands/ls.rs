@@ -5,7 +5,7 @@ use crate::format::path_alias;
 use crate::format::text::{display_name, build_extra};
 use crate::format::OutputFormat;
 use crate::index::auto;
-use crate::ir::types::SymbolKind;
+use crate::query::parser::normalize_kind_filter;
 
 /// Run the `ls` command: list symbols, optionally filtered by kind and file path.
 pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, use_daemon: bool) -> Result<()> {
@@ -25,7 +25,7 @@ pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &
     let start = std::time::Instant::now();
     let index = auto::ensure_index(&root)?;
 
-    let kind_filter = symbol_type.as_deref().and_then(parse_kind_filter);
+    let kind_filter = symbol_type.as_deref().and_then(normalize_kind_filter);
 
     let mut symbols: Vec<_> = if let Some(ref kind) = kind_filter {
         index.by_kind(kind)
@@ -48,9 +48,6 @@ pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &
     Ok(())
 }
 
-pub fn parse_kind_filter(s: &str) -> Option<SymbolKind> {
-    s.parse::<SymbolKind>().ok()
-}
 
 pub fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
     if symbols.is_empty() {
@@ -66,7 +63,7 @@ pub fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
 
     let kind_width = symbols
         .iter()
-        .map(|s| format!("{}", s.kind).len())
+        .map(|s| s.kind.len())
         .max()
         .unwrap_or(0);
     let name_width = symbols
@@ -84,7 +81,7 @@ pub fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
     }
 
     for sym in symbols {
-        let kind_str = format!("{}", sym.kind);
+        let kind_str = &sym.kind;
         let name = display_name(sym);
         let raw_file = sym.loc.file.to_string_lossy();
         let file_str = if let Some(ref a) = alias {

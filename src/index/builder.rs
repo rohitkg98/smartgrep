@@ -38,6 +38,7 @@ pub fn build(ir: &Ir) -> Index {
     }
 
     Index {
+        version: super::types::INDEX_VERSION,
         symbols,
         deps,
         name_lookup,

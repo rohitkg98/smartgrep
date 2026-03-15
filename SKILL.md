@@ -90,14 +90,38 @@ smartgrep query "symbol Foo | with deps, refs"  # relationships
 smartgrep query "functions where file contains 'src/api' | show name, signature"
 ```
 
+## Language-native vocabulary
+
+Symbols use language-native kind strings (not a shared enum):
+
+| Language | Kinds |
+|---|---|
+| **Rust** | fn, method, struct, enum, trait, impl, const, type, mod |
+| **Java** | class, interface, enum, method, record |
+| **Go** | func, method, struct, interface, const, type |
+
+**Dependency kinds:** Call, TypeRef, Implements
+
+**`interfaces` vs `traits`:** `interfaces` = Java/Go interface; `traits` = Rust trait. They are distinct.
+
 ## Query DSL
 
 ### Sources
 - `structs`, `functions`, `methods`, `traits`, `enums`, `symbols` — list by kind
+- `interfaces` — Java/Go interfaces (not Rust traits)
+- `traits` — Rust traits only
 - `symbol <name>` — single symbol lookup
 - `deps [name]` — dependencies (optionally for a symbol)
 - `refs [name]` — references (optionally for a symbol)
 - `symbols in 'path'` — symbols in a file or directory
+
+### `implementing` clause
+Find types that implement a trait or interface:
+```bash
+smartgrep query "structs implementing Display"
+smartgrep query "classes implementing Serializable | with fields"
+smartgrep query "structs implementing Handler"  # Go: structural typing, matched by method set
+```
 
 ### Filters
 ```
@@ -125,7 +149,7 @@ Semicolon-separated: `"structs | limit 5 ; functions | limit 5"`
 | What are the REST endpoints? | `smartgrep query "methods where attributes contains '@PostMapping' or attributes contains '@GetMapping' \| show name, file, signature"` |
 | Show me the domain model | `smartgrep query "structs where file contains 'domain' or file contains 'model' \| with fields"` |
 | What does X depend on? | `smartgrep query "symbol X \| with deps, refs"` |
-| Find implementations of Y | `smartgrep refs Y` or `smartgrep query "structs where parent = 'Y' \| with fields"` |
+| Find implementations of Y | `smartgrep query "structs implementing Y \| with fields"` |
 | List services | `smartgrep query "structs where attributes contains '@Service' \| show name, file"` |
 | Public API in a directory | `smartgrep query "functions where file contains 'src/api' and visibility = public \| show name, file, signature"` |
 

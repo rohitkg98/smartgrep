@@ -4,7 +4,7 @@ use crate::daemon::client;
 use crate::format::path_alias;
 use crate::format::OutputFormat;
 use crate::index::auto;
-use crate::ir::types::{Symbol, SymbolKind, Visibility};
+use crate::ir::types::{Symbol, Visibility};
 
 /// Run the `show` command: display full detail for a named symbol.
 pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBuf>, use_daemon: bool) -> Result<()> {
@@ -95,7 +95,7 @@ fn format_symbol_detail(sym: &Symbol, alias: Option<&path_alias::PathAlias>) -> 
     }
 
     // Params (for functions/methods)
-    if matches!(sym.kind, SymbolKind::Function | SymbolKind::Method) && !sym.params.is_empty() {
+    if (sym.kind == "fn" || sym.kind == "func" || sym.kind == "method") && !sym.params.is_empty() {
         let param_strs: Vec<String> = sym
             .params
             .iter()
