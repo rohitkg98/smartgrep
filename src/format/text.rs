@@ -8,19 +8,19 @@ pub fn format_symbols(ir: &Ir) -> String {
         return String::new();
     }
 
-    // Collect file paths for alias detection
+    // Collect file paths for display optimization
     let file_paths: Vec<&str> = ir
         .symbols
         .iter()
         .map(|s| s.loc.file.to_str().unwrap_or(""))
         .collect();
-    let alias = path_alias::compute_path_alias(&file_paths);
+    let display = path_alias::compute_path_display(&file_paths);
 
     let mut lines = Vec::new();
 
-    // Emit alias header if applicable
-    if let Some(ref a) = alias {
-        lines.push(a.header());
+    // Emit header if applicable
+    if let Some(ref d) = display {
+        lines.push(d.header());
         lines.push(String::new()); // blank line after header
     }
 
@@ -42,12 +42,11 @@ pub fn format_symbols(ir: &Ir) -> String {
         let kind_str = &sym.kind;
         let name = display_name(sym);
         let raw_file = sym.loc.file.to_string_lossy();
-        let file_str = if let Some(ref a) = alias {
-            a.shorten(&raw_file)
+        let loc = if let Some(ref d) = display {
+            d.format_loc(&raw_file, sym.loc.line)
         } else {
-            raw_file.to_string()
+            format!("{}:{}", raw_file, sym.loc.line)
         };
-        let loc = format!("{}:{}", file_str, sym.loc.line);
 
         let extra = build_extra(sym);
 
@@ -80,7 +79,7 @@ pub fn display_name(sym: &Symbol) -> String {
 
 pub fn build_extra(sym: &Symbol) -> String {
     match sym.kind.as_str() {
-        "fn" | "func" | "method" => {
+        "fn" | "func" | "function" | "method" => {
             let params: Vec<String> = sym
                 .params
                 .iter()

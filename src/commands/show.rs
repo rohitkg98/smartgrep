@@ -39,25 +39,25 @@ pub fn run(name: &str, format_str: &str, project_root: &Option<std::path::PathBu
 
 /// Format symbol detail as text, usable from tests.
 pub fn format_text(symbols: &[&Symbol]) -> String {
-    // Compute path alias across all symbols
+    // Compute path display optimization across all symbols
     let file_paths: Vec<&str> = symbols
         .iter()
         .map(|s| s.loc.file.to_str().unwrap_or(""))
         .collect();
-    let alias = path_alias::compute_path_alias(&file_paths);
+    let display = path_alias::compute_path_display(&file_paths);
 
     let mut sections = Vec::new();
 
-    // Emit alias header if applicable
-    if let Some(ref a) = alias {
-        sections.push(a.header());
+    // Emit header if applicable
+    if let Some(ref d) = display {
+        sections.push(d.header());
     }
 
     for sym in symbols {
-        sections.push(format_symbol_detail(sym, alias.as_ref()));
+        sections.push(format_symbol_detail(sym, display.as_ref()));
     }
 
-    if alias.is_some() {
+    if display.is_some() {
         // Header is first, then join detail sections with ---
         let header = sections.remove(0);
         format!("{}\n\n{}", header, sections.join("\n---\n"))
@@ -66,7 +66,7 @@ pub fn format_text(symbols: &[&Symbol]) -> String {
     }
 }
 
-fn format_symbol_detail(sym: &Symbol, alias: Option<&path_alias::PathAlias>) -> String {
+fn format_symbol_detail(sym: &Symbol, display: Option<&path_alias::PathDisplay>) -> String {
     let mut lines = Vec::new();
 
     // Kind and qualified name
@@ -74,12 +74,12 @@ fn format_symbol_detail(sym: &Symbol, alias: Option<&path_alias::PathAlias>) -> 
 
     // Location
     let raw_file = sym.loc.file.to_string_lossy();
-    let file_str = if let Some(a) = alias {
-        a.shorten(&raw_file)
+    let loc = if let Some(d) = display {
+        d.format_loc(&raw_file, sym.loc.line)
     } else {
-        raw_file.to_string()
+        format!("{}:{}", raw_file, sym.loc.line)
     };
-    lines.push(format!("  file: {}:{}", file_str, sym.loc.line));
+    lines.push(format!("  file: {}", loc));
 
     // Visibility
     lines.push(format!("  visibility: {}", visibility_str(&sym.visibility)));
@@ -95,7 +95,7 @@ fn format_symbol_detail(sym: &Symbol, alias: Option<&path_alias::PathAlias>) -> 
     }
 
     // Params (for functions/methods)
-    if (sym.kind == "fn" || sym.kind == "func" || sym.kind == "method") && !sym.params.is_empty() {
+    if (sym.kind == "fn" || sym.kind == "func" || sym.kind == "function" || sym.kind == "method") && !sym.params.is_empty() {
         let param_strs: Vec<String> = sym
             .params
             .iter()

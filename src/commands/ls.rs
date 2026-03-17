@@ -1,6 +1,5 @@
 use anyhow::Result;
 
-use crate::daemon::client;
 use crate::format::path_alias;
 use crate::format::text::{display_name, build_extra};
 use crate::format::OutputFormat;
@@ -27,8 +26,9 @@ pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &
 
     let kind_filter = symbol_type.as_deref().and_then(normalize_kind_filter);
 
-    let mut symbols: Vec<_> = if let Some(ref kind) = kind_filter {
-        index.by_kind(kind)
+    let mut symbols: Vec<_> = if let Some(ref kinds) = kind_filter {
+        let kind_refs: Vec<&str> = kinds.iter().map(|s| s.as_str()).collect();
+        index.by_kinds(&kind_refs)
     } else {
         index.symbols.iter().collect()
     };
@@ -48,18 +48,19 @@ pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &
     Ok(())
 }
 
+use crate::daemon::client;
 
 pub fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
     if symbols.is_empty() {
         return "No symbols found.".to_string();
     }
 
-    // Collect file paths for alias detection
+    // Collect file paths for display optimization
     let file_paths: Vec<&str> = symbols
         .iter()
         .map(|s| s.loc.file.to_str().unwrap_or(""))
         .collect();
-    let alias = path_alias::compute_path_alias(&file_paths);
+    let display = path_alias::compute_path_display(&file_paths);
 
     let kind_width = symbols
         .iter()
@@ -74,9 +75,9 @@ pub fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
 
     let mut lines = Vec::new();
 
-    // Emit alias header if applicable
-    if let Some(ref a) = alias {
-        lines.push(a.header());
+    // Emit header if applicable
+    if let Some(ref d) = display {
+        lines.push(d.header());
         lines.push(String::new());
     }
 
@@ -84,12 +85,11 @@ pub fn format_text(symbols: &[&crate::ir::types::Symbol]) -> String {
         let kind_str = &sym.kind;
         let name = display_name(sym);
         let raw_file = sym.loc.file.to_string_lossy();
-        let file_str = if let Some(ref a) = alias {
-            a.shorten(&raw_file)
+        let loc = if let Some(ref d) = display {
+            d.format_loc(&raw_file, sym.loc.line)
         } else {
-            raw_file.to_string()
+            format!("{}:{}", raw_file, sym.loc.line)
         };
-        let loc = format!("{}:{}", file_str, sym.loc.line);
 
         let extra = build_extra(sym);
 

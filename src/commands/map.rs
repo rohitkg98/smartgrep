@@ -172,14 +172,14 @@ fn group_by_dir(
 
 fn symbol_sort_order(kind: &str) -> u8 {
     match kind {
-        "struct" | "class" | "record" | "enum" | "trait" | "interface" | "type" | "const" => 0,
+        "struct" | "class" | "record" | "enum" | "trait" | "interface" | "type" | "const" | "namespace" => 0,
         _ => 1,
     }
 }
 
 fn inline_name(s: &Symbol) -> String {
     match s.kind.as_str() {
-        "fn" | "func" => s.name.clone(),
+        "fn" | "func" | "function" => s.name.clone(),
         "struct" => format!("struct {}", s.name),
         "class" => format!("class {}", s.name),
         "record" => format!("record {}", s.name),
@@ -189,6 +189,7 @@ fn inline_name(s: &Symbol) -> String {
         "type" => format!("type {}", s.name),
         "const" => format!("const {}", s.name),
         "mod" => format!("mod {}", s.name),
+        "namespace" => format!("namespace {}", s.name),
         _ => s.name.clone(),
     }
 }
@@ -201,7 +202,8 @@ fn kind_label(kind: &str) -> Option<(&'static str, u8)> {
         "type" => Some(("type", 3)),
         "const" => Some(("const", 4)),
         "mod" => Some(("mod", 5)),
-        "fn" | "func" => Some(("fn", 6)),
+        "fn" | "func" | "function" => Some(("fn", 6)),
+        "namespace" => Some(("ns", 7)),
         _ => None,
     }
 }

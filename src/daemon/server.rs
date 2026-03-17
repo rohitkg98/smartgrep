@@ -269,8 +269,9 @@ fn dispatch_ls(args: &str, format: &str, index: &Index) -> Response {
         normalize_kind_filter(kind_str)
     };
 
-    let mut symbols: Vec<_> = if let Some(ref kind) = kind_filter {
-        index.by_kind(kind)
+    let mut symbols: Vec<_> = if let Some(ref kinds) = kind_filter {
+        let kind_refs: Vec<&str> = kinds.iter().map(|s| s.as_str()).collect();
+        index.by_kinds(&kind_refs)
     } else {
         index.symbols.iter().collect()
     };
@@ -316,9 +317,6 @@ fn dispatch_refs(args: &str, _format: &str, index: &Index) -> Response {
 fn dispatch_context(args: &str, format: &str, project_root: &Path) -> Response {
     use std::path::PathBuf;
     use crate::format::OutputFormat;
-    use crate::parser::go as go_parser;
-    use crate::parser::java as java_parser;
-    use crate::parser::rust as rust_parser;
 
     let file = PathBuf::from(args);
     let full_path = if file.is_absolute() {
@@ -332,16 +330,7 @@ fn dispatch_context(args: &str, format: &str, project_root: &Path) -> Response {
         Err(e) => return Response::error(format!("Cannot read {}: {}", full_path.display(), e)),
     };
 
-    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let result = match ext {
-        "go" => go_parser::parse_file(&file, &source),
-        "java" => java_parser::parse_file(&file, &source),
-        "rs" => rust_parser::parse_file(&file, &source),
-        _ => return Response::error(format!(
-            "Unsupported file type '.{}'. smartgrep supports .rs, .java, and .go files.",
-            ext
-        )),
-    };
+    let result = crate::parser::parse_by_extension(&file, &source);
 
     match result {
         Ok(ir) => {
@@ -384,7 +373,9 @@ fn start_file_watcher(
                 Ok(event) => {
                     // Only re-index on file modifications/creations/deletions of .rs/.java files
                     let dominated_by_source = event.paths.iter().any(|p| {
-                        p.extension().map_or(false, |e| e == "rs" || e == "java" || e == "go")
+                        p.extension().map_or(false, |e| {
+                            e == "rs" || e == "java" || e == "go" || e == "ts" || e == "tsx"
+                        })
                     });
                     if !dominated_by_source {
                         return;

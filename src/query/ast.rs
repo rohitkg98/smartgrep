@@ -43,10 +43,12 @@ pub struct Query {
 /// The source clause determines what data to start with.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Source {
-    /// All symbols, optionally filtered by kind.
+    /// All symbols, optionally filtered by kind(s).
     /// "symbols", "structs", "functions", etc.
+    /// kind_filter is a Vec to support cross-language umbrella terms
+    /// (e.g., "functions" → ["fn", "func", "function"]).
     Symbols {
-        kind_filter: Option<String>,
+        kind_filter: Option<Vec<String>>,
         in_file: Option<String>,
         implementing: Option<String>,
         where_clause: Vec<Vec<Condition>>,

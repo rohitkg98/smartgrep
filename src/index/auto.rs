@@ -4,9 +4,6 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 
 use crate::ir::types::Ir;
-use crate::parser::go as go_parser;
-use crate::parser::java as java_parser;
-use crate::parser::rust as rust_parser;
 
 use super::builder;
 use super::store;
@@ -28,6 +25,8 @@ pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
             || current.join("build.gradle").exists()
             || current.join("build.gradle.kts").exists()
             || current.join("go.mod").exists()
+            || current.join("package.json").exists()
+            || current.join("tsconfig.json").exists()
         {
             return Some(current);
         }
@@ -47,10 +46,10 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
         .git_exclude(true)
         .filter_entry(|entry| {
             let path = entry.path();
-            // Skip the target directory and .smartgrep directory
+            // Skip build/cache directories
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name == "target" || name == ".smartgrep" {
+                if name == "target" || name == ".smartgrep" || name == "node_modules" {
                     return false;
                 }
             }
@@ -62,7 +61,7 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_file() {
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ext == "rs" || ext == "java" || ext == "go" {
+                if ext == "rs" || ext == "java" || ext == "go" || ext == "ts" || ext == "tsx" {
                     files.push(path.to_path_buf());
                 }
             }
@@ -140,13 +139,7 @@ pub fn parse_all_sources(root: &Path) -> Result<Ir> {
         let source = std::fs::read_to_string(src_path)
             .map_err(|e| anyhow::anyhow!("Cannot read {}: {}", src_path.display(), e))?;
 
-        let ext = src_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let result = match ext {
-            "rs" => rust_parser::parse_file(rel_path, &source),
-            "java" => java_parser::parse_file(rel_path, &source),
-            "go" => go_parser::parse_file(rel_path, &source),
-            _ => continue,
-        };
+        let result = crate::parser::parse_by_extension(rel_path, &source);
 
         match result {
             Ok(ir) => {

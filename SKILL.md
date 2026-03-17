@@ -6,24 +6,24 @@ Full agent reference: `AGENTS_README.md` in this repo (if available) or see inli
 
 ## Supported languages
 
-smartgrep parses **Rust, Java, and Go** only. It has no knowledge of other file types.
+smartgrep parses **Rust, Java, Go, and TypeScript** only. It has no knowledge of other file types.
 
-**Use smartgrep for:** `.rs`, `.go`, `.java` files — structural questions about code.
+**Use smartgrep for:** `.rs`, `.go`, `.java`, `.ts`, `.tsx` files — structural questions about code.
 
-**For everything else** (`.md`, `.yaml`, `.toml`, `.json`, `.py`, `.ts`, `.js`, Dockerfiles, config files, documentation) — handle as you normally would without smartgrep. It has no knowledge of these file types.
+**For everything else** (`.md`, `.yaml`, `.toml`, `.json`, `.py`, `.js`, Dockerfiles, config files, documentation) — handle as you normally would without smartgrep. It has no knowledge of these file types.
 
 Using smartgrep for code does not mean ignoring non-code files. Documentation and config often contain context the code index cannot surface.
 
 ## When to use smartgrep
 
 Use it when the user asks about:
-- Code structure, architecture, or organization in Rust, Java, or Go files
-- Finding classes, functions, interfaces, enums, records, structs, traits
+- Code structure, architecture, or organization in Rust, Java, Go, or TypeScript files
+- Finding classes, functions, interfaces, enums, records, structs, traits, namespaces
 - Dependencies between symbols or what references a symbol
-- Exploring an unfamiliar Rust/Java/Go codebase
+- Exploring an unfamiliar Rust/Java/Go/TypeScript codebase
 - Finding implementations of an interface or trait
 - Listing endpoints, services, controllers, consumers
-- Any structural question that would otherwise need multiple grep/read calls across `.rs`, `.go`, or `.java` files
+- Any structural question that would otherwise need multiple grep/read calls across `.rs`, `.go`, `.java`, `.ts`, or `.tsx` files
 
 ## Detecting availability
 
@@ -99,16 +99,21 @@ Symbols use language-native kind strings (not a shared enum):
 | **Rust** | fn, method, struct, enum, trait, impl, const, type, mod |
 | **Java** | class, interface, enum, method, record |
 | **Go** | func, method, struct, interface, const, type |
+| **TypeScript** | function, class, interface, enum, type, method, const, namespace |
 
 **Dependency kinds:** Call, TypeRef, Implements
 
-**`interfaces` vs `traits`:** `interfaces` = Java/Go interface; `traits` = Rust trait. They are distinct.
+**`interfaces` vs `traits`:** `interfaces` = Java/Go/TS interface; `traits` = Rust trait. They are distinct.
+
+**Cross-language queries:**
+- `functions` → finds Rust fn, Go func, TS function (all function-like symbols)
+- `fns` → Rust only, `funcs` → Go only, `function` → TS only
 
 ## Query DSL
 
 ### Sources
-- `structs`, `functions`, `methods`, `traits`, `enums`, `symbols` — list by kind
-- `interfaces` — Java/Go interfaces (not Rust traits)
+- `structs`, `functions`, `methods`, `traits`, `enums`, `symbols`, `namespaces` — list by kind
+- `interfaces` — Java/Go/TS interfaces (not Rust traits)
 - `traits` — Rust traits only
 - `symbol <name>` — single symbol lookup
 - `deps [name]` — dependencies (optionally for a symbol)
@@ -153,6 +158,18 @@ Semicolon-separated: `"structs | limit 5 ; functions | limit 5"`
 | List services | `smartgrep query "structs where attributes contains '@Service' \| show name, file"` |
 | Public API in a directory | `smartgrep query "functions where file contains 'src/api' and visibility = public \| show name, file, signature"` |
 
+### TypeScript examples
+```bash
+# TypeScript: find decorated classes
+smartgrep query "classes where attributes contains '@Injectable' | with fields"
+
+# TypeScript: interfaces in a specific directory
+smartgrep query "interfaces where file contains 'src/types/' | with fields"
+
+# TypeScript: all exported functions (cross-language)
+smartgrep query "functions where visibility = public and file contains 'src/'"
+```
+
 ## Large-repo warnings
 
 **Never run bare `smartgrep map` or `smartgrep ls functions` on a repo with 100+ files.** The output can be hundreds of lines and burns context budget without adding value. Always scope first:
@@ -169,6 +186,8 @@ smartgrep query "functions where file contains 'src/api/' | show name, file | li
 ```
 
 **Generated files are excluded by default.** Bindgen output, protobuf stubs, and vendor code are filtered out automatically. Use `--include-generated` only when you specifically need to inspect generated code.
+
+**node_modules** is automatically skipped during indexing.
 
 ## Output guidance
 

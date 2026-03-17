@@ -663,7 +663,7 @@ fn query_text_output_has_path_alias_header() {
     let batch = parser::parse("symbols").unwrap();
     let output = engine::execute_batch(&batch, &index, "text").unwrap();
     // Should contain the alias header
-    assert!(output.contains("[paths]"), "output should contain [paths] header:\n{}", output);
+    assert!(output.contains("[P] ="), "output should contain [P] = header:\n{}", output);
     assert!(output.contains("[P]"), "output should contain [P] alias:\n{}", output);
     assert!(output.contains("src/main/java/com/example/ecommerce/catalog/"),
         "alias header should contain the common prefix:\n{}", output);

@@ -17,21 +17,33 @@ fn normalize_kind_term(s: &str) -> Option<String> {
         "record" | "records"                    => Some("record".to_string()),
         // Go-native
         "func" | "funcs"                        => Some("func".to_string()),
+        // TypeScript-native
+        "function"                              => Some("function".to_string()),
+        "namespace" | "namespaces"              => Some("namespace".to_string()),
         // Cross-language (genuine shared concepts)
         "method" | "methods"                    => Some("method".to_string()),
         "interface" | "interfaces"              => Some("interface".to_string()),
         "enum" | "enums"                        => Some("enum".to_string()),
         "const" | "consts" | "constants"        => Some("const".to_string()),
         "type" | "types"                        => Some("type".to_string()),
-        // Legacy aliases for backwards-compatible queries
-        "functions" | "function"                => Some("fn".to_string()),
+        // Umbrella terms — resolve to first matching kind; cross-language expansion
+        // happens in normalize_kind_filter
+        "functions"                             => Some("fn".to_string()),
         _                                       => None,
     }
 }
 
 /// Public entry point for `ls` command's kind filter.
-pub fn normalize_kind_filter(s: &str) -> Option<String> {
-    normalize_kind_term(s)
+/// Returns a Vec of kind strings to support cross-language queries.
+/// Umbrella terms expand to all matching kinds across languages.
+pub fn normalize_kind_filter(s: &str) -> Option<Vec<String>> {
+    let lower = s.to_lowercase();
+    match lower.as_str() {
+        // Umbrella terms: expand to all language-specific kinds
+        "functions" => Some(vec!["fn".into(), "func".into(), "function".into()]),
+        // Language-specific terms: return single kind
+        _ => normalize_kind_term(s).map(|k| vec![k]),
+    }
 }
 
 /// Parse a query string into a Batch of queries.
@@ -184,16 +196,18 @@ fn parse_source(input: &str) -> Result<Source> {
             Ok(Source::Refs { name, where_clause })
         }
 
-        // Kind-specific: try normalize_kind_term
+        // Kind-specific: try normalize_kind_filter for cross-language expansion
         _ => {
-            if let Some(kind) = normalize_kind_term(&keyword) {
-                parse_symbols_source(rest, Some(kind))
+            if let Some(kinds) = normalize_kind_filter(&keyword) {
+                parse_symbols_source(rest, Some(kinds))
             } else {
                 Err(anyhow!(
                     "unknown source '{}'. Use language-native terms:\n  \
                      Rust:  fns, structs, enums, traits, consts, types, mods, methods\n  \
                      Java:  classes, interfaces, enums, methods, annotations, records, consts\n  \
                      Go:    funcs, structs, interfaces, methods, consts, types\n  \
+                     TS:    functions, classes, interfaces, enums, types, methods, consts, namespaces\n  \
+                     Cross: functions (all fn/func/function)\n  \
                      All:   symbols, deps, refs, symbol <name>",
                     keyword
                 ))
@@ -203,7 +217,7 @@ fn parse_source(input: &str) -> Result<Source> {
 }
 
 /// Parse a symbols source with optional "in 'file'", "implementing", and "where" clauses.
-fn parse_symbols_source(tokens: &[String], kind_filter: Option<String>) -> Result<Source> {
+fn parse_symbols_source(tokens: &[String], kind_filter: Option<Vec<String>>) -> Result<Source> {
     let mut i = 0;
     let mut in_file = None;
     let mut implementing = None;
@@ -455,7 +469,7 @@ mod tests {
         assert_eq!(
             q.source,
             Source::Symbols {
-                kind_filter: Some("struct".to_string()),
+                kind_filter: Some(vec!["struct".to_string()]),
                 in_file: None,
                 implementing: None,
                 where_clause: vec![],
@@ -470,7 +484,7 @@ mod tests {
         let q = &batch.queries[0];
         match &q.source {
             Source::Symbols { kind_filter, where_clause, .. } => {
-                assert_eq!(*kind_filter, Some("fn".to_string()));
+                assert_eq!(*kind_filter, Some(vec!["fn".into(), "func".into(), "function".into()]));
                 // One AND group with 2 conditions
                 assert_eq!(where_clause.len(), 1);
                 assert_eq!(where_clause[0].len(), 2);
@@ -491,7 +505,7 @@ mod tests {
         let q = &batch.queries[0];
         match &q.source {
             Source::Symbols { kind_filter, implementing, .. } => {
-                assert_eq!(*kind_filter, Some("struct".to_string()));
+                assert_eq!(*kind_filter, Some(vec!["struct".to_string()]));
                 assert_eq!(*implementing, Some("Display".to_string()));
             }
             _ => panic!("expected Symbols source"),

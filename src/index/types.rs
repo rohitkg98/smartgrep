@@ -68,6 +68,7 @@ impl Index {
                 Some("rs") => { langs.insert("rust"); }
                 Some("java") => { langs.insert("java"); }
                 Some("go") => { langs.insert("go"); }
+                Some("ts") | Some("tsx") => { langs.insert("typescript"); }
                 _ => {}
             }
         }

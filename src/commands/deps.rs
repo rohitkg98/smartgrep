@@ -68,17 +68,17 @@ pub fn format_text(groups: &[DepsGroup]) -> String {
     let mut lines = Vec::new();
     let multiple_groups = groups.len() > 1;
 
-    // Collect file paths for alias detection
+    // Collect file paths for display optimization
     let file_paths: Vec<&str> = groups
         .iter()
         .flat_map(|g| g.deps.iter())
         .map(|d| d.loc.file.to_str().unwrap_or(""))
         .collect();
-    let alias = path_alias::compute_path_alias(&file_paths);
+    let display = path_alias::compute_path_display(&file_paths);
 
-    // Emit alias header if applicable
-    if let Some(ref a) = alias {
-        lines.push(a.header());
+    // Emit header if applicable
+    if let Some(ref d) = display {
+        lines.push(d.header());
         lines.push(String::new());
     }
 
@@ -109,12 +109,11 @@ pub fn format_text(groups: &[DepsGroup]) -> String {
         for dep in &group.deps {
             let kind_str = format!("{}", dep.kind);
             let raw_file = dep.loc.file.to_string_lossy();
-            let file_str = if let Some(ref a) = alias {
-                a.shorten(&raw_file)
+            let loc = if let Some(ref d) = display {
+                d.format_loc(&raw_file, dep.loc.line)
             } else {
-                raw_file.to_string()
+                format!("{}:{}", raw_file, dep.loc.line)
             };
-            let loc = format!("{}:{}", file_str, dep.loc.line);
             lines.push(format!(
                 "{:<kw$}  {:<nw$}  {}",
                 kind_str, dep.to_name, loc,

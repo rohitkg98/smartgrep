@@ -1,14 +1,24 @@
-/// Path alias detection for text output.
+/// Path display optimization for text output.
 ///
-/// Finds the longest common directory prefix among a set of file paths,
-/// and if it saves significant tokens (prefix > 20 chars, 2+ unique paths),
-/// returns an alias mapping so output can use `[P]` instead of the full prefix.
+/// Two modes:
+/// - **SingleFile**: All symbols come from the same file. Emit the path once as a header,
+///   drop it from every row (saves N-1 repetitions).
+/// - **Alias**: Multiple files share a long common directory prefix. Emit a `[P] = prefix`
+///   header and replace the prefix with `[P]` in every row.
 
 const ALIAS_MARKER: &str = "[P]";
 const MIN_PREFIX_LEN: usize = 20;
-const MIN_UNIQUE_PATHS: usize = 2;
 
-/// The result of path alias computation.
+/// How to display paths in text output.
+#[derive(Debug, Clone)]
+pub enum PathDisplay {
+    /// All symbols are from one file — show path once as header, omit from rows.
+    SingleFile { path: String },
+    /// Multiple files share a common prefix — use alias substitution.
+    Alias(PathAlias),
+}
+
+/// The result of path alias computation (multi-file case).
 #[derive(Debug, Clone)]
 pub struct PathAlias {
     /// The common prefix that was factored out (always ends with `/`).
@@ -17,10 +27,41 @@ pub struct PathAlias {
     pub marker: String,
 }
 
+impl PathDisplay {
+    /// Format the header line(s) for text output.
+    pub fn header(&self) -> String {
+        match self {
+            PathDisplay::SingleFile { path } => format!("# {}", path),
+            PathDisplay::Alias(alias) => alias.header(),
+        }
+    }
+
+    /// Shorten a file path for display in a row.
+    /// For SingleFile, returns empty string (path is in the header).
+    /// For Alias, replaces the prefix with the marker.
+    pub fn shorten_file(&self, path: &str) -> String {
+        match self {
+            PathDisplay::SingleFile { .. } => String::new(),
+            PathDisplay::Alias(alias) => alias.shorten(path),
+        }
+    }
+
+    /// Format a location (file + line) for display in a row.
+    /// For SingleFile, returns just `:line`.
+    /// For Alias, returns `[P]rest/file.rs:line`.
+    /// For no optimization, returns `file:line` as-is.
+    pub fn format_loc(&self, path: &str, line: usize) -> String {
+        match self {
+            PathDisplay::SingleFile { .. } => format!(":{}", line),
+            PathDisplay::Alias(alias) => format!("{}:{}", alias.shorten(path), line),
+        }
+    }
+}
+
 impl PathAlias {
     /// Format the alias header line for text output.
     pub fn header(&self) -> String {
-        format!("[paths] {} = {}", self.prefix, self.marker)
+        format!("{} = {}", self.marker, self.prefix)
     }
 
     /// Shorten a path by replacing the prefix with the alias marker.
@@ -33,14 +74,13 @@ impl PathAlias {
     }
 }
 
-/// Compute a path alias from a list of file paths.
+/// Compute the best path display strategy for a set of file paths.
 ///
-/// Returns `Some(PathAlias)` if:
-/// - There are at least `MIN_UNIQUE_PATHS` unique paths
-/// - The longest common directory prefix is longer than `MIN_PREFIX_LEN` chars
-///
-/// Returns `None` otherwise (no savings from aliasing).
-pub fn compute_path_alias(paths: &[&str]) -> Option<PathAlias> {
+/// Returns:
+/// - `SingleFile` if all paths point to the same file
+/// - `Alias` if multiple files share a long common directory prefix
+/// - `None` if no optimization helps
+pub fn compute_path_display(paths: &[&str]) -> Option<PathDisplay> {
     if paths.is_empty() {
         return None;
     }
@@ -50,11 +90,14 @@ pub fn compute_path_alias(paths: &[&str]) -> Option<PathAlias> {
     unique.sort();
     unique.dedup();
 
-    if unique.len() < MIN_UNIQUE_PATHS {
-        return None;
+    // Single file — all symbols come from the same path
+    if unique.len() == 1 {
+        return Some(PathDisplay::SingleFile {
+            path: unique[0].to_string(),
+        });
     }
 
-    // Find longest common prefix
+    // Multiple files — try to find a common prefix alias
     let mut prefix = longest_common_prefix(&unique);
 
     // Truncate to last '/' boundary
@@ -65,12 +108,20 @@ pub fn compute_path_alias(paths: &[&str]) -> Option<PathAlias> {
     }
 
     if prefix.len() > MIN_PREFIX_LEN {
-        Some(PathAlias {
+        Some(PathDisplay::Alias(PathAlias {
             prefix: prefix.to_string(),
             marker: ALIAS_MARKER.to_string(),
-        })
+        }))
     } else {
         None
+    }
+}
+
+/// Backwards-compatible wrapper — returns just the alias if applicable.
+pub fn compute_path_alias(paths: &[&str]) -> Option<PathAlias> {
+    match compute_path_display(paths) {
+        Some(PathDisplay::Alias(alias)) => Some(alias),
+        _ => None,
     }
 }
 
@@ -100,43 +151,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_single_file_display() {
+        let paths = vec![
+            "src/com/example/User.java",
+            "src/com/example/User.java",
+            "src/com/example/User.java",
+        ];
+        let display = compute_path_display(&paths).unwrap();
+        match &display {
+            PathDisplay::SingleFile { path } => {
+                assert_eq!(path, "src/com/example/User.java");
+            }
+            _ => panic!("expected SingleFile"),
+        }
+        assert_eq!(display.header(), "# src/com/example/User.java");
+        assert_eq!(display.format_loc("src/com/example/User.java", 10), ":10");
+    }
+
+    #[test]
+    fn test_single_unique_file() {
+        let paths = vec!["src/com/example/User.java"];
+        let display = compute_path_display(&paths).unwrap();
+        assert!(matches!(display, PathDisplay::SingleFile { .. }));
+    }
+
+    #[test]
     fn test_common_prefix_java_paths() {
         let paths = vec![
             "src/main/java/com/example/ecommerce/catalog/controller/ProductController.java",
             "src/main/java/com/example/ecommerce/catalog/service/InventoryService.java",
             "src/main/java/com/example/ecommerce/catalog/model/Order.java",
         ];
-        let alias = compute_path_alias(&paths).unwrap();
-        assert_eq!(alias.prefix, "src/main/java/com/example/ecommerce/catalog/");
-        assert_eq!(alias.marker, "[P]");
+        let display = compute_path_display(&paths).unwrap();
+        match &display {
+            PathDisplay::Alias(alias) => {
+                assert_eq!(alias.prefix, "src/main/java/com/example/ecommerce/catalog/");
+                assert_eq!(alias.marker, "[P]");
+            }
+            _ => panic!("expected Alias"),
+        }
+        assert_eq!(
+            display.header(),
+            "[P] = src/main/java/com/example/ecommerce/catalog/"
+        );
+    }
+
+    #[test]
+    fn test_alias_format_loc() {
+        let paths = vec![
+            "src/main/java/com/example/ecommerce/catalog/controller/ProductController.java",
+            "src/main/java/com/example/ecommerce/catalog/service/InventoryService.java",
+        ];
+        let display = compute_path_display(&paths).unwrap();
+        assert_eq!(
+            display.format_loc(
+                "src/main/java/com/example/ecommerce/catalog/controller/ProductController.java",
+                42
+            ),
+            "[P]controller/ProductController.java:42"
+        );
     }
 
     #[test]
     fn test_no_alias_short_prefix() {
-        let paths = vec![
-            "src/foo/a.rs",
-            "src/foo/b.rs",
-        ];
-        // "src/foo/" is 8 chars, below MIN_PREFIX_LEN
-        assert!(compute_path_alias(&paths).is_none());
-    }
-
-    #[test]
-    fn test_no_alias_single_file() {
-        let paths = vec![
-            "src/main/java/com/example/ecommerce/catalog/Foo.java",
-        ];
-        assert!(compute_path_alias(&paths).is_none());
-    }
-
-    #[test]
-    fn test_no_alias_single_unique_file() {
-        // Same path twice — only 1 unique
-        let paths = vec![
-            "src/main/java/com/example/ecommerce/catalog/Foo.java",
-            "src/main/java/com/example/ecommerce/catalog/Foo.java",
-        ];
-        assert!(compute_path_alias(&paths).is_none());
+        let paths = vec!["src/foo/a.rs", "src/foo/b.rs"];
+        // "src/foo/" is 8 chars, below MIN_PREFIX_LEN — no alias, not single file
+        assert!(compute_path_display(&paths).is_none());
     }
 
     #[test]
@@ -168,7 +248,7 @@ mod tests {
         };
         assert_eq!(
             alias.header(),
-            "[paths] src/main/java/com/example/ecommerce/catalog/ = [P]"
+            "[P] = src/main/java/com/example/ecommerce/catalog/"
         );
     }
 
@@ -186,6 +266,20 @@ mod tests {
     #[test]
     fn test_empty_paths() {
         let paths: Vec<&str> = vec![];
+        assert!(compute_path_display(&paths).is_none());
+    }
+
+    #[test]
+    fn test_compute_path_alias_backwards_compat() {
+        // Single file — alias returns None
+        let paths = vec!["src/foo.rs", "src/foo.rs"];
         assert!(compute_path_alias(&paths).is_none());
+
+        // Multi-file with long prefix — alias returns Some
+        let paths = vec![
+            "src/main/java/com/example/alpha/Foo.java",
+            "src/main/java/com/example/beta/Bar.java",
+        ];
+        assert!(compute_path_alias(&paths).is_some());
     }
 }

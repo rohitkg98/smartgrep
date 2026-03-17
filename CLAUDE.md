@@ -31,14 +31,14 @@ Parser (tree-sitter) → IR → Index Builder → Index → Command
 
 ## Key design decisions
 - IR exists so we can add languages by writing one parser, without changing the index builder or commands
-- Parsers are tested against fixture files — small .rs/.java files in tests/fixtures/
+- Parsers are tested against fixture files — small .rs/.java/.go/.ts files in tests/fixtures/
 - Index builder is tested with hand-built IR — no parsing needed
 - Commands are tested with hand-built Index — no builder needed
 - Auto-indexing: queries trigger indexing implicitly. Re-indexes when source files change.
 
 ## File layout
 - `src/ir/` — IR types and validation
-- `src/parser/` — tree-sitter parsers (rust.rs, later java.rs)
+- `src/parser/` — tree-sitter parsers (rust.rs, java.rs, go.rs, typescript.rs); `mod.rs` has `parse_by_extension` dispatch
 - `src/index/` — index types, builder, storage, auto-detection
 - `src/commands/` — CLI commands (context, ls, show, deps, refs)
 - `src/format/` — text table and JSON output
@@ -52,8 +52,15 @@ Symbols use language-native kind strings, not a shared enum:
 - **Rust:** fn, method, struct, enum, trait, impl, const, type, mod
 - **Java:** class, interface, enum, method, record
 - **Go:** func, method, struct, interface, const, type
+- **TypeScript:** function, class, interface, enum, type, method, const, namespace
 
 Dependency kinds: Call (was FunctionCall), TypeRef (was TypeReference), Implements (was TraitImpl)
+
+### Cross-language queries
+Umbrella terms find symbols across all languages:
+- `functions` → finds Rust `fn`, Go `func`, TS `function`
+- `fns` → Rust only, `funcs` → Go only, `function` → TS only
+Language-specific terms target one language. Shared terms like `structs`, `interfaces`, `enums` work as before.
 
 ### Prefer smartgrep query for compound questions
 ```bash
@@ -93,12 +100,15 @@ smartgrep query "functions where name starts_with 'New' and file contains 'servi
 ```
 
 ### Language notes
-- **Go/Java interfaces** → use `interfaces` (kind="interface")
+- **Go/Java/TS interfaces** → use `interfaces` (kind="interface")
 - **Rust traits** → use `traits` (kind="trait", Rust only)
-- **`interfaces` and `traits` are distinct** — `interfaces` matches Java/Go interface, `traits` matches Rust trait
+- **`interfaces` and `traits` are distinct** — `interfaces` matches Java/Go/TS interface, `traits` matches Rust trait
 - **Go method receivers** → stored in `parent` field (e.g., `methods where parent = MultiGateway`)
 - **Generated code** → filter out with `where file not contains '.pb.go'`
 - **`implementing` clause** → `structs implementing Display` finds types that implement a trait/interface
+- **TS decorators** → stored in `attributes` (e.g., `classes where attributes contains '@Injectable'`)
+- **TS namespaces** → `namespaces` or `namespace` (kind="namespace", TS only)
+- **node_modules** → automatically skipped during indexing
 
 ### When to use smartgrep vs file reading
 - **Use smartgrep**: finding symbols, understanding structure, exploring dependencies, listing functions/structs

@@ -10,7 +10,7 @@ You have access to `smartgrep`, a structural code navigation tool. Read this bef
 
 It is **not a text search tool**. It is a **structural search tool**. It understands code, not bytes.
 
-**Supported languages: Rust, Java, Go.** smartgrep only indexes `.rs`, `.go`, and `.java` files. It has no knowledge of `.md`, `.yaml`, `.toml`, `.json`, `.py`, `.ts`, or any other file type. For those, handle them as you normally would without smartgrep — using smartgrep for code does not mean ignoring everything else.
+**Supported languages: Rust, Java, Go, and TypeScript.** smartgrep only indexes `.rs`, `.go`, `.java`, `.ts`, and `.tsx` files. It has no knowledge of `.md`, `.yaml`, `.toml`, `.json`, `.py`, or any other file type. For those, handle them as you normally would without smartgrep — using smartgrep for code does not mean ignoring everything else.
 
 ---
 
@@ -69,13 +69,18 @@ Symbols use language-native kind strings, not a shared enum. The `kind` field on
 | **Rust** | fn, method, struct, enum, trait, impl, const, type, mod |
 | **Java** | class, interface, enum, method, record |
 | **Go** | func, method, struct, interface, const, type |
+| **TypeScript** | function, class, interface, enum, type, method, const, namespace |
 
 **Dependency kinds:** Call, TypeRef, Implements (renamed from FunctionCall, TypeReference, TraitImpl)
 
 **`interfaces` vs `traits`:**
-- `interfaces` = kind="interface" (Java and Go only)
+- `interfaces` = kind="interface" (Java, Go, and TypeScript)
 - `traits` = kind="trait" (Rust only)
 - These are distinct source keywords — they do not alias each other
+
+**Cross-language queries:**
+- `functions` → finds Rust fn, Go func, TS function (all function-like symbols)
+- `fns` → Rust only, `funcs` → Go only, `function` → TS only
 
 ## Query DSL
 
@@ -88,6 +93,7 @@ source      = source_kind [implementing_clause] [in_clause] [where_clause]
 source_kind = "symbols" | "structs" | "functions" | "methods" | "traits"
             | "enums" | "impls" | "consts" | "types" | "modules"
             | "classes" | "interfaces" | "records"
+            | "functions" | "namespaces"
             | "symbol" <name> | "deps" [<name>] | "refs" [<name>]
 implementing_clause = "implementing" <name>
 in_clause   = "in" '<path_substring>'
@@ -216,7 +222,7 @@ smartgrep map --format json | jq '.[].dir'
 
 ### Pattern 7 — Cross-language queries
 
-Same DSL works across Rust, Java, and Go. Use language-native kinds:
+Same DSL works across Rust, Java, Go, and TypeScript. Use language-native kinds:
 
 ```bash
 # Go: methods on a specific receiver type
@@ -239,6 +245,15 @@ smartgrep query "traits where visibility = public | with deps | show name, file,
 
 # Rust: structs implementing a trait
 smartgrep query "structs implementing Display"
+
+# TypeScript: find decorated classes
+smartgrep query "classes where attributes contains '@Injectable' | with fields"
+
+# TypeScript: interfaces in a specific directory
+smartgrep query "interfaces where file contains 'src/types/' | with fields"
+
+# TypeScript: namespaces
+smartgrep query "namespaces | with fields"
 ```
 
 ---

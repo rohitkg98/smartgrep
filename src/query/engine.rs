@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use std::collections::HashSet;
 
-use crate::format::path_alias;
+use crate::format::path_alias::{self, PathDisplay};
 use crate::index::types::Index;
 use crate::ir::types::{DepKind, Dependency, Symbol, Visibility};
 
@@ -82,24 +82,25 @@ fn resolve_source(source: &Source, index: &Index) -> Result<Vec<Row>> {
                         s.loc.file.to_string_lossy().contains(file_path.as_str())
                     })
                     .collect()
-            } else if let Some(ref kind) = kind_filter {
-                index.by_kind(kind)
+            } else if let Some(ref kinds) = kind_filter {
+                let kind_refs: Vec<&str> = kinds.iter().map(|s| s.as_str()).collect();
+                index.by_kinds(&kind_refs)
             } else {
                 index.symbols.iter().collect()
             };
 
             // Apply kind filter if both in_file and kind_filter are set
             let symbols: Vec<&Symbol> = if in_file.is_some() && kind_filter.is_some() {
-                let sk = kind_filter.as_ref().unwrap();
-                symbols.into_iter().filter(|s| s.kind == sk.as_str()).collect()
+                let kinds = kind_filter.as_ref().unwrap();
+                symbols.into_iter().filter(|s| kinds.iter().any(|k| s.kind == k.as_str())).collect()
             } else {
                 symbols
             };
 
             // Apply implementing filter
             let symbols = if let Some(ref trait_name) = implementing {
-                const GO_KINDS: &[&str] = &["func", "struct", "interface", "method", "const", "type"];
-                if kind_filter.as_deref().map(|k| GO_KINDS.contains(&k)).unwrap_or(false) {
+                const GO_ONLY_KINDS: &[&str] = &["func"];
+                if kind_filter.as_ref().map(|kinds| kinds.iter().all(|k| GO_ONLY_KINDS.contains(&k.as_str()))).unwrap_or(false) {
                     return Err(anyhow::anyhow!(
                         "Go uses structural typing — `implementing` is not valid for Go.\n\
                          To find types that satisfy an interface, check which types have \
@@ -509,31 +510,39 @@ fn format_text(rows: &[Row], query: &Query) -> String {
         return "No results.".to_string();
     }
 
-    // Compute path alias if "file" column is present
+    // Compute path display optimization if "file" column is present
     let has_file_col = columns.contains(&"file".to_string());
-    let alias = if has_file_col {
+    let path_display = if has_file_col {
         let file_paths: Vec<&str> = rows
             .iter()
             .filter_map(|row| row.get("file").map(|v| v.as_str()))
             .collect();
-        path_alias::compute_path_alias(&file_paths)
+        path_alias::compute_path_display(&file_paths)
     } else {
         None
     };
 
-    // Apply alias to file values for display (create shortened copies)
-    let display_rows: Vec<Row> = if let Some(ref a) = alias {
-        rows.iter()
-            .map(|row| {
-                let mut new_row = row.clone();
-                if let Some(file_val) = row.get("file") {
-                    new_row.set("file", a.shorten(file_val));
-                }
-                new_row
-            })
-            .collect()
+    // For SingleFile, remove the "file" column from display since it's in the header
+    let columns: Vec<String> = if matches!(path_display, Some(PathDisplay::SingleFile { .. })) {
+        columns.into_iter().filter(|c| c != "file").collect()
     } else {
-        rows.to_vec()
+        columns
+    };
+
+    // Apply path display to file values for display (create shortened copies)
+    let display_rows: Vec<Row> = match &path_display {
+        Some(PathDisplay::Alias(alias)) => {
+            rows.iter()
+                .map(|row| {
+                    let mut new_row = row.clone();
+                    if let Some(file_val) = row.get("file") {
+                        new_row.set("file", alias.shorten(file_val));
+                    }
+                    new_row
+                })
+                .collect()
+        }
+        _ => rows.to_vec(),
     };
 
     // Compute column widths using display rows
@@ -551,9 +560,9 @@ fn format_text(rows: &[Row], query: &Query) -> String {
 
     let mut lines = Vec::new();
 
-    // Emit alias header if applicable
-    if let Some(ref a) = alias {
-        lines.push(a.header());
+    // Emit header if applicable
+    if let Some(ref d) = path_display {
+        lines.push(d.header());
         lines.push(String::new());
     }
 
