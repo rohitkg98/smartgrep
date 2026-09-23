@@ -2,4 +2,5 @@
 .idea
 .claude
 target
-.vscode.DS_Store
+.vscode
+.DS_Store
