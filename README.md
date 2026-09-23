@@ -20,11 +20,47 @@ When Claude uses smartgrep, you can see exactly what it's looking for at a glanc
 
 ## Installation
 
+**macOS, Linux, FreeBSD, Android (Termux):**
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | sh
 ```
 
-Installs the latest release binary for your platform (macOS arm64/x86_64, Linux x86_64/arm64). No Rust required.
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.ps1 | iex
+```
+
+Both install a prebuilt binary for your platform from the [latest release](https://github.com/rohitkg98/smartgrep/releases/latest). No Rust required.
+
+| OS | Architectures | Release asset |
+|---|---|---|
+| macOS | Apple Silicon (arm64), Intel (x86_64) | `smartgrep-{aarch64,x86_64}-apple-darwin.tar.gz` |
+| Linux | x86_64, arm64, armv7, armv6 (Raspberry Pi Zero/1), i686, riscv64, ppc64le, loongarch64 | `smartgrep-<arch>-unknown-linux-musl*.tar.gz` (static, any distro) |
+| Linux | s390x | `smartgrep-s390x-unknown-linux-gnu.tar.gz` (glibc 2.31+) |
+| Windows | x86_64, arm64 | `smartgrep-{x86_64,aarch64}-pc-windows-msvc.zip` |
+| FreeBSD | x86_64 | `smartgrep-x86_64-unknown-freebsd.tar.gz` |
+| Android (Termux) | arm64, armv7 | uses the static Linux binaries; installs into `$PREFIX/bin` |
+
+Where it installs: `/usr/local/bin` if writable, else `~/.local/bin` (Termux: `$PREFIX/bin`; Windows: `%LOCALAPPDATA%\Programs\smartgrep`, added to your user `PATH`). Options, as environment variables for either script:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | SMARTGREP_VERSION=0.4.0 sh      # pin a version
+curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | SMARTGREP_INSTALL_DIR=~/bin sh   # install elsewhere
+```
+
+```powershell
+$env:SMARTGREP_VERSION = "0.4.0"; irm https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.ps1 | iex
+```
+
+**Checksums:** every release has a `SHA256SUMS` file. The install scripts verify the download against it (when `sha256sum`, `shasum`, `sha256` or `openssl` is available; always on Windows). To check a manual download: `sha256sum -c SHA256SUMS --ignore-missing`.
+
+**Other platforms:** no prebuilt binary? Build from source (Rust 1.70+):
+
+```sh
+cargo install --git https://github.com/rohitkg98/smartgrep
+```
 
 ### Update
 
