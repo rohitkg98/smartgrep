@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ir::types::{Dependency, Symbol};
 
+/// Bump when the index schema or the set of indexed languages changes, so
+/// existing on-disk indexes are rebuilt.
 pub const INDEX_VERSION: u32 = 2;
 
 /// The queryable index: symbols + dependencies + lookup tables.
@@ -64,12 +66,8 @@ impl Index {
     pub fn languages(&self) -> Vec<&'static str> {
         let mut langs = std::collections::HashSet::new();
         for file in self.file_lookup.keys() {
-            match file.extension().and_then(|e| e.to_str()) {
-                Some("rs") => { langs.insert("rust"); }
-                Some("java") => { langs.insert("java"); }
-                Some("go") => { langs.insert("go"); }
-                Some("ts") | Some("tsx") => { langs.insert("typescript"); }
-                _ => {}
+            if let Some(lang) = crate::lang::language_for_path(file) {
+                langs.insert(lang.name);
             }
         }
         langs.into_iter().collect()

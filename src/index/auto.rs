@@ -12,7 +12,8 @@ use super::types::Index;
 const INDEX_DIR: &str = ".smartgrep";
 const INDEX_FILE: &str = "index.json";
 
-/// Walk up from `start` looking for a directory containing Cargo.toml, pom.xml, or build.gradle.
+/// Walk up from `start` looking for a directory containing any registered
+/// language's project marker (Cargo.toml, go.mod, package.json, ...).
 pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
     let mut current = if start.is_file() {
         start.parent()?.to_path_buf()
@@ -20,14 +21,7 @@ pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
         start.to_path_buf()
     };
     loop {
-        if current.join("Cargo.toml").exists()
-            || current.join("pom.xml").exists()
-            || current.join("build.gradle").exists()
-            || current.join("build.gradle.kts").exists()
-            || current.join("go.mod").exists()
-            || current.join("package.json").exists()
-            || current.join("tsconfig.json").exists()
-        {
+        if crate::lang::project_markers().any(|m| current.join(m).exists()) {
             return Some(current);
         }
         if !current.pop() {
@@ -36,7 +30,8 @@ pub fn detect_project_root(start: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Collect all `.rs` and `.java` source files under `root`, respecting .gitignore.
+/// Collect all supported source files under `root`, respecting .gitignore and
+/// skipping hidden, build, cache and dependency directories.
 pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let walker = WalkBuilder::new(root)
@@ -46,10 +41,9 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
         .git_exclude(true)
         .filter_entry(|entry| {
             let path = entry.path();
-            // Skip build/cache directories
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if name == "target" || name == ".smartgrep" || name == "node_modules" {
+                if crate::lang::is_skip_dir(name) {
                     return false;
                 }
             }
@@ -59,12 +53,8 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
 
     for entry in walker.flatten() {
         let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ext == "rs" || ext == "java" || ext == "go" || ext == "ts" || ext == "tsx" {
-                    files.push(path.to_path_buf());
-                }
-            }
+        if path.is_file() && crate::lang::is_source_file(path) {
+            files.push(path.to_path_buf());
         }
     }
     files
@@ -75,7 +65,7 @@ pub fn index_path(root: &Path) -> PathBuf {
     root.join(INDEX_DIR).join(INDEX_FILE)
 }
 
-/// Check whether the index is stale (any .rs file newer than the index).
+/// Check whether the index is stale (any source file newer than the index).
 pub fn is_stale(root: &Path) -> bool {
     let idx_path = index_path(root);
     if !idx_path.exists() {
@@ -160,7 +150,10 @@ pub fn ensure_index(root: &Path) -> Result<Index> {
     let idx_path = index_path(root);
 
     if idx_path.exists() && !is_stale(root) {
-        return store::load(&idx_path);
+        // A load error (old format / version mismatch) means rebuild, not fail.
+        if let Ok(index) = store::load(&idx_path) {
+            return Ok(index);
+        }
     }
 
     rebuild_index(root)

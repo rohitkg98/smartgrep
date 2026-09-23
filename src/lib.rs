@@ -4,5 +4,6 @@ pub mod daemon;
 pub mod format;
 pub mod index;
 pub mod ir;
+pub mod lang;
 pub mod parser;
 pub mod query;

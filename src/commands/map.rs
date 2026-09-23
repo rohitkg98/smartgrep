@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::format::OutputFormat;
 use crate::index::auto;
 use crate::index::types::Index;
+use crate::ir::kinds;
 use crate::ir::types::{Symbol, Visibility};
 
 pub fn run(
@@ -171,59 +172,35 @@ fn group_by_dir(
 // --- Symbol helpers ---
 
 fn symbol_sort_order(kind: &str) -> u8 {
-    match kind {
-        "struct" | "class" | "record" | "enum" | "trait" | "interface" | "type" | "const" | "namespace" => 0,
-        _ => 1,
-    }
+    kinds::kind_rank(kind)
 }
 
+/// Inline symbol label for `--symbols` mode: functions by bare name, everything
+/// else prefixed with its native kind (`class User`, `interface Repo`, `struct X`).
 fn inline_name(s: &Symbol) -> String {
-    match s.kind.as_str() {
-        "fn" | "func" | "function" => s.name.clone(),
-        "struct" => format!("struct {}", s.name),
-        "class" => format!("class {}", s.name),
-        "record" => format!("record {}", s.name),
-        "enum" => format!("enum {}", s.name),
-        "trait" => format!("trait {}", s.name),
-        "interface" => format!("interface {}", s.name),
-        "type" => format!("type {}", s.name),
-        "const" => format!("const {}", s.name),
-        "mod" => format!("mod {}", s.name),
-        "namespace" => format!("namespace {}", s.name),
-        _ => s.name.clone(),
+    if kinds::is_function_kind(&s.kind) {
+        s.name.clone()
+    } else {
+        format!("{} {}", s.kind, s.name)
     }
 }
 
-fn kind_label(kind: &str) -> Option<(&'static str, u8)> {
-    match kind {
-        "struct" | "class" | "record" => Some(("struct", 0)),
-        "enum" => Some(("enum", 1)),
-        "trait" | "interface" => Some(("trait", 2)),
-        "type" => Some(("type", 3)),
-        "const" => Some(("const", 4)),
-        "mod" => Some(("mod", 5)),
-        "fn" | "func" | "function" => Some(("fn", 6)),
-        "namespace" => Some(("ns", 7)),
-        _ => None,
-    }
-}
-
-/// Count symbols per kind for a set of index entries, sorted types-first.
-fn count_by_kind(file_syms: &[(PathBuf, Vec<&Symbol>)], indices: &[usize]) -> Vec<(&'static str, usize)> {
-    let mut counts: std::collections::BTreeMap<u8, (&'static str, usize)> =
-        std::collections::BTreeMap::new();
+/// Count symbols per native kind for a set of index entries.
+/// Ordered by `kinds::kind_rank` (types first, then consts, then functions),
+/// ties broken by kind string, so output is stable.
+fn count_by_kind(file_syms: &[(PathBuf, Vec<&Symbol>)], indices: &[usize]) -> Vec<(String, usize)> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
     for &i in indices {
         for sym in &file_syms[i].1 {
-            if let Some((label, order)) = kind_label(&sym.kind) {
-                let e = counts.entry(order).or_insert((label, 0));
-                e.1 += 1;
-            }
+            *counts.entry(sym.kind.as_str()).or_insert(0) += 1;
         }
     }
-    counts.into_values().collect()
+    let mut out: Vec<(String, usize)> = counts.into_iter().map(|(k, n)| (k.to_string(), n)).collect();
+    out.sort_by(|(a, _), (b, _)| kinds::kind_rank(a).cmp(&kinds::kind_rank(b)).then(a.cmp(b)));
+    out
 }
 
-fn format_counts(counts: &[(&'static str, usize)]) -> String {
+fn format_counts(counts: &[(String, usize)]) -> String {
     counts
         .iter()
         .map(|(label, n)| format!("{}×{}", label, n))
@@ -233,39 +210,46 @@ fn format_counts(counts: &[(&'static str, usize)]) -> String {
 
 // --- Dependency signal ---
 
+/// Split a qualified name or import path into segments, accepting both `::`
+/// (Rust) and `.` (Java/TS) separators. Wildcards/braces are dropped.
+fn path_segments(name: &str) -> Vec<&str> {
+    let base = name.split('{').next().unwrap_or(name);
+    base.split("::")
+        .flat_map(|p| p.split('.'))
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty() && *p != "*")
+        .collect()
+}
+
 /// Build a map from every qualified-name prefix → relative directory.
-/// This lets import dep paths like `crate::ir::types` resolve to `src/ir/`.
+/// This lets import dep paths like `crate::ir::types` or `app.models.user`
+/// resolve to their directory. Keys are segments joined with `.`.
 fn build_module_dir_map(index: &Index, root: &Path) -> HashMap<String, PathBuf> {
     let mut map: HashMap<String, PathBuf> = HashMap::new();
     for sym in &index.symbols {
         let rel = sym.loc.file.strip_prefix(root).unwrap_or(&sym.loc.file);
         let dir = rel.parent().unwrap_or(Path::new("")).to_path_buf();
-        let parts: Vec<&str> = sym.qualified_name.split("::").collect();
+        let parts = path_segments(&sym.qualified_name);
         // Register every prefix so both `crate::ir` and `crate::ir::types` resolve
         for len in 1..=parts.len() {
-            let prefix = parts[..len].join("::");
+            let prefix = parts[..len].join(".");
             map.entry(prefix).or_insert_with(|| dir.clone());
         }
     }
     map
 }
 
-/// Resolve an import `to_name` (e.g. `crate::ir::types::*`) to a project directory.
+/// Resolve an import `to_name` (e.g. `crate::ir::types::*`, `app.models.User`)
+/// to a project directory, trying the longest known prefix first.
+/// A single-segment prefix only counts when it is the whole import, so that an
+/// external `com.google.Foo` doesn't resolve via a shared root like `com`.
 fn resolve_import_dir(to_name: &str, module_dir_map: &HashMap<String, PathBuf>) -> Option<PathBuf> {
-    // Normalize: strip wildcard / braces so `crate::ir::types::*` → `crate::ir::types`
-    // and `crate::ir::{Symbol, Dep}` → `crate::ir`
-    let base = to_name
-        .split('{')
-        .next()
-        .unwrap_or(to_name)
-        .trim_end_matches('*')
-        .trim_end_matches("::")
-        .trim();
-
-    // Try longest prefix first, then progressively shorter
-    let parts: Vec<&str> = base.split("::").collect();
+    let parts = path_segments(to_name);
     for len in (1..=parts.len()).rev() {
-        let prefix = parts[..len].join("::");
+        if len == 1 && parts.len() > 1 {
+            break;
+        }
+        let prefix = parts[..len].join(".");
         if let Some(dir) = module_dir_map.get(&prefix) {
             return Some(dir.clone());
         }
@@ -508,7 +492,7 @@ struct JsonDir {
 
 #[derive(Serialize)]
 struct JsonKindCount {
-    kind: &'static str,
+    kind: String,
     count: usize,
 }
 
@@ -564,7 +548,7 @@ fn format_json(
                 files: indices.len(),
                 symbols: counts
                     .iter()
-                    .map(|(label, count)| JsonKindCount { kind: label, count: *count })
+                    .map(|(label, count)| JsonKindCount { kind: label.clone(), count: *count })
                     .collect(),
                 outgoing,
                 file_list,
@@ -573,4 +557,64 @@ fn format_json(
         .collect();
 
     serde_json::to_string_pretty(&dirs).unwrap_or_else(|_| "[]".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::types::SourceLoc;
+
+    fn sym(name: &str, kind: &str, file: &str) -> Symbol {
+        Symbol::new(
+            name.to_string(),
+            name.to_string(),
+            kind,
+            SourceLoc { file: PathBuf::from(file), line: 1, col: 1 },
+            Visibility::Public,
+        )
+    }
+
+    fn counts_for(syms: &[Symbol]) -> String {
+        let refs: Vec<&Symbol> = syms.iter().collect();
+        let file_syms = vec![(PathBuf::from("f"), refs)];
+        format_counts(&count_by_kind(&file_syms, &[0]))
+    }
+
+    #[test]
+    fn java_classes_are_not_labelled_struct() {
+        let syms = vec![
+            sym("User", "class", "User.java"),
+            sym("Order", "class", "Order.java"),
+            sym("Repo", "interface", "Repo.java"),
+        ];
+        let out = counts_for(&syms);
+        assert_eq!(out, "class×2  interface×1");
+        assert!(!out.contains("struct"));
+        assert!(!out.contains("trait"));
+    }
+
+    #[test]
+    fn counts_use_native_kinds_types_first() {
+        let syms = vec![
+            sym("run", "fn", "a.rs"),
+            sym("main", "func", "b.go"),
+            sym("Point", "struct", "a.rs"),
+            sym("Show", "trait", "a.rs"),
+            sym("MAX", "const", "a.rs"),
+            sym("helper", "function", "c.ts"),
+            sym("Ns", "namespace", "c.ts"),
+        ];
+        assert_eq!(
+            counts_for(&syms),
+            "struct×1  trait×1  const×1  namespace×1  fn×1  func×1  function×1"
+        );
+    }
+
+    #[test]
+    fn inline_name_uses_native_kind() {
+        assert_eq!(inline_name(&sym("User", "class", "U.java")), "class User");
+        assert_eq!(inline_name(&sym("Repo", "interface", "R.go")), "interface Repo");
+        assert_eq!(inline_name(&sym("run", "fn", "a.rs")), "run");
+        assert_eq!(inline_name(&sym("helper", "function", "a.ts")), "helper");
+    }
 }

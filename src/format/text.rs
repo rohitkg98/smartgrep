@@ -1,4 +1,5 @@
 use crate::format::path_alias;
+use crate::ir::kinds;
 use crate::ir::types::{Ir, Symbol};
 
 /// Format IR symbols as greppable text output.
@@ -78,35 +79,30 @@ pub fn display_name(sym: &Symbol) -> String {
 }
 
 pub fn build_extra(sym: &Symbol) -> String {
-    match sym.kind.as_str() {
-        "fn" | "func" | "function" | "method" => {
-            let params: Vec<String> = sym
-                .params
-                .iter()
-                .filter(|p| p.name != "self")
-                .map(|p| {
-                    if p.type_name.is_empty() {
-                        p.name.clone()
-                    } else {
-                        format!("{}: {}", p.name, p.type_name)
-                    }
-                })
-                .collect();
-            let ret = sym
-                .return_type
-                .as_ref()
-                .map(|r| format!(" {}", r))
-                .unwrap_or_default();
-            format!("({}){}", params.join(", "), ret)
-        }
-        "struct" | "class" | "record" => {
-            if sym.fields.is_empty() {
-                String::new()
-            } else {
-                let field_names: Vec<&str> = sym.fields.iter().map(|f| f.name.as_str()).collect();
-                format!("{{{}}}", field_names.join(", "))
-            }
-        }
-        _ => String::new(),
+    let kind = sym.kind.as_str();
+    if kinds::is_callable_kind(kind) {
+        let params: Vec<String> = sym
+            .params
+            .iter()
+            .filter(|p| p.name != "self")
+            .map(|p| {
+                if p.type_name.is_empty() {
+                    p.name.clone()
+                } else {
+                    format!("{}: {}", p.name, p.type_name)
+                }
+            })
+            .collect();
+        let ret = sym
+            .return_type
+            .as_ref()
+            .map(|r| format!(" {}", r))
+            .unwrap_or_default();
+        format!("({}){}", params.join(", "), ret)
+    } else if kinds::has_data_fields(kind) && !sym.fields.is_empty() {
+        let field_names: Vec<&str> = sym.fields.iter().map(|f| f.name.as_str()).collect();
+        format!("{{{}}}", field_names.join(", "))
+    } else {
+        String::new()
     }
 }

@@ -95,7 +95,7 @@ fn format_symbol_detail(sym: &Symbol, display: Option<&path_alias::PathDisplay>)
     }
 
     // Params (for functions/methods)
-    if (sym.kind == "fn" || sym.kind == "func" || sym.kind == "function" || sym.kind == "method") && !sym.params.is_empty() {
+    if crate::ir::kinds::is_callable_kind(&sym.kind) && !sym.params.is_empty() {
         let param_strs: Vec<String> = sym
             .params
             .iter()

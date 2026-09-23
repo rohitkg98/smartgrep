@@ -371,12 +371,14 @@ fn start_file_watcher(
             }
             match res {
                 Ok(event) => {
-                    // Only re-index on file modifications/creations/deletions of .rs/.java files
-                    let dominated_by_source = event.paths.iter().any(|p| {
-                        p.extension().map_or(false, |e| {
-                            e == "rs" || e == "java" || e == "go" || e == "ts" || e == "tsx"
-                        })
-                    });
+                    // Only re-index on changes to files of a supported language
+                    let dominated_by_source = event
+                        .paths
+                        .iter()
+                        .any(|p| {
+                            let rel = p.strip_prefix(&root_clone).unwrap_or(p);
+                            crate::lang::is_source_file(p) && !crate::lang::is_in_skipped_dir(rel)
+                        });
                     if !dominated_by_source {
                         return;
                     }
