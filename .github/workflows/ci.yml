@@ -2,14 +2,29 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "platform/**"]
   pull_request:
     branches: [main]
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
-    name: Tests
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x86_64 }
+          - { os: macos-14, name: macos-arm64 }
+          # macos-13 (the last Intel image) is retired; macos-15-intel replaces it.
+          - { os: macos-15-intel, name: macos-x86_64 }
+          - { os: windows-latest, name: windows-x86_64 }
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -17,13 +32,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.name }}
+
+      - name: Platform
+        run: uname -a && rustc -vV
 
       - name: Unit tests
         run: cargo test
@@ -31,4 +45,61 @@ jobs:
       - name: Regression tests
         run: |
           cargo build --quiet
-          SMARTGREP="./target/debug/smartgrep" bash tests/regression/run.sh
+          SMARTGREP="./target/debug/smartgrep" bash tests/regression/snapshot.sh "snapshot-${{ matrix.name }}"
+
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-${{ matrix.name }}
+          path: snapshot-${{ matrix.name }}
+
+  freebsd:
+    name: Tests (freebsd-x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y rust bash jq
+          run: |
+            set -e
+            uname -a
+            rustc -vV
+            cargo test
+            cargo build --quiet
+            SMARTGREP="./target/debug/smartgrep" bash tests/regression/snapshot.sh snapshot-freebsd-x86_64
+
+      - name: Upload snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-freebsd-x86_64
+          path: snapshot-freebsd-x86_64
+
+  # Output and index content must be byte-identical across OSes for the same tree.
+  cross-os-identical:
+    name: Output identical across OSes
+    needs: [test, freebsd]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: snapshots
+
+      - name: Diff every snapshot against Linux
+        run: |
+          ls snapshots
+          status=0
+          for d in snapshots/snapshot-*; do
+            [ "$d" = snapshots/snapshot-linux-x86_64 ] && continue
+            if diff -r snapshots/snapshot-linux-x86_64 "$d" > "$d.diff"; then
+              echo "identical: $(basename "$d")"
+            else
+              echo "::error::$(basename "$d") differs from linux-x86_64"
+              head -100 "$d.diff"
+              status=1
+            fi
+          done
+          exit $status

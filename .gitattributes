@@ -1,0 +1,12 @@
+# Check out text files with LF on every OS. Parser output (line numbers, spans)
+# and regression output must not change on Windows checkouts with autocrlf.
+* text=auto eol=lf
+
+# Binary assets (none today; listed so future additions aren't mangled).
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.exe binary
+*.zip binary
+*.gz binary
