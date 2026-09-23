@@ -2,13 +2,6 @@
 
 This repository is a Rust (edition 2021) CLI for structural code navigation. Keep this file and `CLAUDE.md` consistent when changing project conventions; `CLAUDE.md` has the detailed query vocabulary, architecture notes, roadmap workflow, and release procedure.
 
-## Devbox and accounts
-
-- Persistent checkout: `/home/exedev/workspace/smartgrep`. Browser editor: code-server on port 8080, opened at this checkout. Desktop VS Code (`code`) is also installed, but this VM is headless.
-- Rust comes from rustup; Node.js/npm, Go, Python 3, git, `gh`, and common build tools are available. The Rust binary and cargo live in `~/.cargo/bin`.
-- Git `origin` uses the VM's GitHub integration: `https://github.int.exe.xyz/rohitkg98/smartgrep.git`. Use this remote for clone/fetch/push. `gh` is a separate authentication flow and may require `gh auth login` and the `project` scope for roadmap operations.
-- Claude Code is installed. To use the **Claude Pro subscription**, run `claude auth login --claudeai` in a terminal and sign in with your Claude account, then run `claude` from the repository. Do not set `ANTHROPIC_API_KEY` or `ANTHROPIC_BASE_URL` for this workflow: those select API billing/gateway access instead of the subscription. Never commit credentials.
-
 ## Build and run
 
 ```bash
