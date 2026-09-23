@@ -6,6 +6,8 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-23
+
 ### Added
 - Type references in `refs` and `deps` for all languages: `refs Index` now lists functions and methods that take or return an `Index` (`type_ref`) and types with an `Index` field (`field_type`), and `deps <fn>` shows the project types in its signature. Only types defined in the project count; primitives, standard wrappers (`Option`, `Vec`, `List`, `Promise`, ...) and external types are skipped. ([#15](https://github.com/rohitkg98/smartgrep/issues/15))
 
