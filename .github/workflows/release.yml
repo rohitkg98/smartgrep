@@ -107,6 +107,12 @@ jobs:
         # No dependency on the VC++ redistributable (vcruntime140.dll).
         run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
 
+      - name: Static linking (musl)
+        if: contains(matrix.target, 'musl')
+        shell: bash
+        # Newer musl targets (riscv64gc, loongarch64, powerpc64le) link dynamically by default.
+        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
+
       - name: Install musl tools
         if: matrix.build == 'native' && contains(matrix.target, 'linux-musl')
         run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
@@ -157,7 +163,12 @@ jobs:
           echo "ASSET=$ASSET" >> "$GITHUB_ENV"
           echo "BIN=$BIN" >> "$GITHUB_ENV"
           ls -l "$ASSET" "$BIN"
-          file "$BIN" || true
+          if command -v file >/dev/null; then
+            file "$BIN"
+            case "${{ matrix.target }}" in
+              *musl*) if file "$BIN" | grep -q "dynamically linked"; then echo "::error::$BIN is not static"; exit 1; fi ;;
+            esac
+          fi
 
       - name: Set up QEMU
         if: matrix.smoke == 'qemu' || matrix.smoke == 'docker'
@@ -173,8 +184,9 @@ jobs:
       - name: Smoke test (QEMU container)
         if: matrix.smoke == 'docker'
         run: |
+          docker pull -q --platform ${{ matrix.platform }} ubuntu:22.04
           sh scripts/smoke.sh docker run --rm --platform ${{ matrix.platform }} \
-            -v "$PWD:/w" -w /w debian:bookworm-slim "$BIN"
+            -v "$PWD:/w" -w /w ubuntu:22.04 "$BIN"
 
       - name: Smoke test (FreeBSD VM)
         if: matrix.smoke == 'freebsd'
@@ -310,10 +322,15 @@ jobs:
           "$PWD/termux/usr/bin/smartgrep" --help >/dev/null
 
       - name: Install a published release (network path)
-        # The latest release may predate SHA256SUMS; install.sh warns and continues.
+        # The latest release may predate SHA256SUMS (install.sh warns and continues)
+        # or this platform (download fails; must point at the cargo fallback).
         run: |
-          SMARTGREP_INSTALL_DIR="$RUNNER_TEMP/net-bin" sh install.sh
-          "$RUNNER_TEMP/net-bin/smartgrep" --help >/dev/null
+          if SMARTGREP_INSTALL_DIR="$RUNNER_TEMP/net-bin" sh install.sh 2>err.txt; then
+            "$RUNNER_TEMP/net-bin/smartgrep" --help >/dev/null
+          else
+            cat err.txt
+            grep -q "cargo install --git https://github.com/rohitkg98/smartgrep" err.txt
+          fi
 
   install-sh-alpine:
     name: install.sh (Alpine, busybox sh)
