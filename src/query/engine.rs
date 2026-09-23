@@ -452,6 +452,15 @@ fn matches_condition(row: &Row, condition: &Condition) -> bool {
                 false
             }
         }
+        // Negations match rows where the field is absent, like NotEq.
+        Op::NotContains | Op::NotStartsWith | Op::NotEndsWith => {
+            let positive = match condition.op {
+                Op::NotContains => Op::Contains,
+                Op::NotStartsWith => Op::StartsWith,
+                _ => Op::EndsWith,
+            };
+            !matches_condition(row, &Condition { op: positive, ..condition.clone() })
+        }
         Op::Gt | Op::Lt | Op::Gte | Op::Lte => {
             let target_num = condition.value.as_number();
             let field_num = field_val.and_then(|v| v.parse::<i64>().ok());

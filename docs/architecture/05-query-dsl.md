@@ -47,6 +47,7 @@ field       = "name" | "qualified_name" | "file" | "line" | "visibility"
             | "from" | "to" | "dep_kind"
             | "field_count" | "param_count"
 op          = "=" | "!=" | "contains" | ">" | "<" | ">=" | "<=" | "starts_with" | "ends_with"
+            | "not" ("contains" | "starts_with" | "ends_with" | "=")
 value       = quoted_string | bare_word | number
 stage       = with_stage | show_stage | where_stage | sort_stage | limit_stage
 with_stage  = "with" enrichment ("," enrichment)*

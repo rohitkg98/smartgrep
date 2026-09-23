@@ -301,9 +301,20 @@ fn parse_where_conditions(tokens: &[String]) -> Result<Vec<Vec<Condition>>> {
         }
 
         let field = tokens[i].to_lowercase();
-        let op = parse_op(&tokens[i + 1])?;
-        let value = parse_value(&tokens[i + 2]);
-        i += 3;
+        // `not` prefixes the operator: `file not contains 'x'`
+        let (op, value_idx) = if tokens[i + 1].to_lowercase() == "not" {
+            if i + 3 >= tokens.len() {
+                return Err(anyhow!(
+                    "incomplete condition at '{}': expected field not op value",
+                    tokens[i]
+                ));
+            }
+            (parse_negated_op(&tokens[i + 2])?, i + 3)
+        } else {
+            (parse_op(&tokens[i + 1])?, i + 2)
+        };
+        let value = parse_value(&tokens[value_idx]);
+        i = value_idx + 1;
 
         current_group.push(Condition { field, op, value });
 
@@ -444,8 +455,24 @@ fn parse_op(s: &str) -> Result<Op> {
         "<=" => Ok(Op::Lte),
         "starts_with" | "startswith" => Ok(Op::StartsWith),
         "ends_with" | "endswith" => Ok(Op::EndsWith),
+        "not_contains" | "!~" => Ok(Op::NotContains),
         _ => Err(anyhow!(
-            "unknown operator '{}'. Expected: =, !=, contains, >, <, >=, <=, starts_with, ends_with",
+            "unknown operator '{}'. Expected: =, !=, contains, >, <, >=, <=, starts_with, ends_with, \
+             or `not` before contains/starts_with/ends_with",
+            s
+        )),
+    }
+}
+
+/// Parse the operator following `not`.
+fn parse_negated_op(s: &str) -> Result<Op> {
+    match parse_op(&s.to_lowercase()) {
+        Ok(Op::Contains) => Ok(Op::NotContains),
+        Ok(Op::StartsWith) => Ok(Op::NotStartsWith),
+        Ok(Op::EndsWith) => Ok(Op::NotEndsWith),
+        Ok(Op::Eq) => Ok(Op::NotEq),
+        _ => Err(anyhow!(
+            "'not {}' is not supported. Use: not contains, not starts_with, not ends_with, not =",
             s
         )),
     }

@@ -241,6 +241,39 @@ fn query_where_file_contains() {
 }
 
 #[test]
+fn query_where_file_not_contains() {
+    let all = run_query("functions");
+    let rows = run_query("functions where file not contains 'commands/'");
+    assert_eq!(rows.len(), all.len() - 1);
+    assert!(rows.iter().all(|r| r.get("name").unwrap() != "run"));
+}
+
+#[test]
+fn query_where_not_starts_with_and_ends_with() {
+    let rows = run_query("symbols where name not starts_with 'B' and name not ends_with 'o'");
+    assert!(!rows.is_empty());
+    for r in &rows {
+        let name = r.get("name").unwrap();
+        assert!(!name.starts_with('B') && !name.ends_with('o'), "unexpected {}", name);
+    }
+}
+
+#[test]
+fn query_where_not_eq_is_not_equal() {
+    assert_eq!(
+        run_query("functions where name not = 'foo'").len(),
+        run_query("functions where name != 'foo'").len()
+    );
+}
+
+#[test]
+fn query_where_not_rejects_unsupported_op() {
+    let err = parser::parse("functions where line not > 5").unwrap_err().to_string();
+    assert!(err.contains("not supported"), "{}", err);
+    assert!(parser::parse("functions where name not").is_err());
+}
+
+#[test]
 fn query_where_combined() {
     let rows = run_query("functions where name = 'run' and file contains 'commands/'");
     assert_eq!(rows.len(), 1);

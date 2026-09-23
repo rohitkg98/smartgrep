@@ -153,6 +153,7 @@ where <field> <op> <value> [and|or ...]
 | `!=` | not equals |
 | `contains` | substring match |
 | `starts_with` / `ends_with` | prefix / suffix |
+| `not contains` / `not starts_with` / `not ends_with` | negated match (true when the field is absent) |
 | `>` `<` `>=` `<=` | numeric comparison |
 
 ### Pipeline stages

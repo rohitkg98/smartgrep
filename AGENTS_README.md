@@ -102,6 +102,7 @@ where_clause = "where" condition (("and" | "or") condition)*
 condition   = field op value
 op          = "=" | "!=" | "contains" | ">" | "<" | ">=" | "<="
             | "starts_with" | "ends_with"
+            | "not" ("contains" | "starts_with" | "ends_with")
 stage       = "with" enrichment ("," enrichment)*
             | "show" column ("," column)*
             | "where" condition (("and" | "or") condition)*
@@ -118,7 +119,7 @@ enrichment  = "fields" | "params" | "deps" | "refs" | "signature"
 
 ### Operators
 
-`=` (alias: `is`, `==`) · `!=` (alias: `is_not`) · `contains` (alias: `has`, `~`) · `starts_with` · `ends_with` · `>` · `<` · `>=` · `<=`
+`=` (alias: `is`, `==`) · `!=` (alias: `is_not`) · `contains` (alias: `has`, `~`) · `starts_with` · `ends_with` · `>` · `<` · `>=` · `<=` · `not contains` / `not starts_with` / `not ends_with` (e.g. `where file not contains '.pb.go'`)
 
 ---
 

@@ -134,7 +134,7 @@ smartgrep query "structs implementing Handler"  # Go: structural typing, matched
 where <field> <op> <value> [and|or ...]
 ```
 **Fields:** name, file, visibility, kind, parent, from, to, dep_kind, field_count, param_count, attributes
-**Operators:** `=`, `!=`, `contains`, `>`, `<`, `>=`, `<=`, `starts_with`, `ends_with`
+**Operators:** `=`, `!=`, `contains`, `>`, `<`, `>=`, `<=`, `starts_with`, `ends_with`; negate with `not`: `not contains`, `not starts_with`, `not ends_with` (e.g. `where file not contains '.pb.go'`)
 
 ### Pipeline stages (after `|`)
 - `with fields` / `with params` / `with deps` / `with refs` / `with signature`
