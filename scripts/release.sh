@@ -9,7 +9,8 @@
 # tag unused, CHANGELOG.md has Unreleased entries) → cargo test → regression
 # suite → bump Cargo.toml/Cargo.lock and turn CHANGELOG "Unreleased" into
 # "X.Y.Z - date" → commit "bump version to X.Y.Z" → tag vX.Y.Z → push main + tag → wait for the
-# Release workflow, verify the binaries were attached, then mark issues closed
+# Release workflow, verify every expected asset (one archive per target in the
+# release.yml build matrix, plus SHA256SUMS) was attached, then mark issues closed
 # by commits in this release (`Closes #N`) as Done on the roadmap board.
 #
 # The tag push triggers .github/workflows/release.yml, which builds the binaries
@@ -18,7 +19,6 @@
 set -euo pipefail
 
 REPO="rohitkg98/smartgrep"
-EXPECTED_ASSETS=3
 
 die() { echo "error: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
@@ -43,7 +43,9 @@ CURRENT=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 # Unreleased section must have at least one entry; it becomes the release notes.
 UNRELEASED=$(awk '/^## \[Unreleased\]/{f=1; next} /^## \[/{f=0} f && /^- /' CHANGELOG.md)
 [[ -n "$UNRELEASED" ]] || die "CHANGELOG.md has no entries under ## [Unreleased]; add them first"
-echo "releasing $CURRENT → $VERSION"
+# One archive per target in release.yml's build matrix, plus SHA256SUMS.
+EXPECTED_ASSETS=$(sh scripts/release-assets.sh) || die "could not derive expected assets from release.yml"
+echo "releasing $CURRENT → $VERSION ($(echo "$EXPECTED_ASSETS" | wc -l | tr -d ' ') assets expected)"
 
 step "Tests"
 cargo test --quiet
@@ -84,9 +86,10 @@ done
 gh run watch "$RUN_ID" --repo "$REPO" --exit-status --interval 20 >/dev/null \
     || die "release workflow failed: https://github.com/$REPO/actions/runs/$RUN_ID"
 
-ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets | length')
-[[ "$ASSETS" -ge "$EXPECTED_ASSETS" ]] || die "release $TAG has $ASSETS assets, expected $EXPECTED_ASSETS"
-echo; echo "released $TAG with $ASSETS assets: https://github.com/$REPO/releases/tag/$TAG"
+ATTACHED=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+MISSING=$(comm -23 <(sort <<<"$EXPECTED_ASSETS") <(sort <<<"$ATTACHED"))
+[[ -z "$MISSING" ]] || die "release $TAG is missing assets:"$'\n'"$MISSING"
+echo; echo "released $TAG with $(wc -l <<<"$ATTACHED" | tr -d ' ') assets: https://github.com/$REPO/releases/tag/$TAG"
 
 step "Update roadmap board"
 # Issues closed by commits in this release (`Closes #N`, `Fixes #N`, `Resolves #N`).

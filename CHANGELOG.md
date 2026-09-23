@@ -8,6 +8,14 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ### Added
 - `smartgrep init`: one-step, non-interactive project onboarding for coding agents. Detects languages, builds the index, writes a short smartgrep block (between `<!-- smartgrep:start -->` / `<!-- smartgrep:end -->` markers, refreshed in place on re-run) into existing `CLAUDE.md`/`AGENTS.md` (or a new `CLAUDE.md`) with example commands using real symbols from the project and the kind vocabulary for detected languages only, installs the repo-scoped skill, and adds `.smartgrep/` to `.gitignore` in git repos. Flags: `--agents-md`, `--no-skill`, `--dry-run`. ([#7](https://github.com/rohitkg98/smartgrep/issues/7))
+- Prebuilt binaries for more platforms: Intel macOS, Linux armv7, armv6 (Raspberry Pi Zero/1), i686, riscv64, ppc64le, s390x and loongarch64, FreeBSD x86_64, and Windows x86_64/arm64. `install.sh` also works on Android (Termux), installing into `$PREFIX/bin`.
+- Windows installer: `irm https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.ps1 | iex` installs to `%LOCALAPPDATA%\Programs\smartgrep` and adds it to the user `PATH`.
+- Releases include a `SHA256SUMS` file; `install.sh` and `install.ps1` verify the download against it.
+- `SMARTGREP_VERSION` pins the version to install and `SMARTGREP_INSTALL_DIR` overrides the install directory (both installers). Unsupported platforms get a pointer to `cargo install --git https://github.com/rohitkg98/smartgrep`.
+
+### Fixed
+- `install.sh` on Intel Macs failed with a 404 because no x86_64 macOS binary was published. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
+- `install.sh` in a Rosetta shell on Apple Silicon now installs the native arm64 binary.
 
 ### Changed
 - The `--daemon` background server is Unix-only (Linux, macOS, FreeBSD); it uses a Unix domain socket. On Windows `--daemon` prints a one-line notice and runs the command directly. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
