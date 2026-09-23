@@ -59,6 +59,21 @@ pub static LANGUAGES: &[Language] = &[
         project_markers: &["package.json", "tsconfig.json"],
         skip_dirs: &["node_modules"],
     },
+    Language {
+        name: "python",
+        extensions: &["py", "pyi"],
+        parse: parser::python::parse_file,
+        project_markers: &["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"],
+        skip_dirs: &[
+            "__pycache__",
+            "venv",
+            ".venv",
+            "site-packages",
+            ".tox",
+            ".mypy_cache",
+            ".pytest_cache",
+        ],
+    },
 ];
 
 /// Find the language that handles a file, by extension.

@@ -20,6 +20,8 @@ fn normalize_kind_term(s: &str) -> Option<String> {
         // TypeScript-native
         "function"                              => Some("function".to_string()),
         "namespace" | "namespaces"              => Some("namespace".to_string()),
+        // Python-native
+        "def" | "defs"                          => Some("def".to_string()),
         // Cross-language (genuine shared concepts)
         "method" | "methods"                    => Some("method".to_string()),
         "interface" | "interfaces"              => Some("interface".to_string()),
@@ -40,7 +42,7 @@ pub fn normalize_kind_filter(s: &str) -> Option<Vec<String>> {
     let lower = s.to_lowercase();
     match lower.as_str() {
         // Umbrella terms: expand to all language-specific kinds
-        "functions" => Some(vec!["fn".into(), "func".into(), "function".into()]),
+        "functions" => Some(crate::ir::kinds::FUNCTION_KINDS.iter().map(|k| k.to_string()).collect()),
         // Language-specific terms: return single kind
         _ => normalize_kind_term(s).map(|k| vec![k]),
     }
@@ -207,7 +209,8 @@ fn parse_source(input: &str) -> Result<Source> {
                      Java:  classes, interfaces, enums, methods, annotations, records, consts\n  \
                      Go:    funcs, structs, interfaces, methods, consts, types\n  \
                      TS:    functions, classes, interfaces, enums, types, methods, consts, namespaces\n  \
-                     Cross: functions (all fn/func/function)\n  \
+                     Python: defs, classes, methods, consts, types\n  \
+                     Cross: functions (all fn/func/function/def)\n  \
                      All:   symbols, deps, refs, symbol <name>",
                     keyword
                 ))
@@ -484,7 +487,7 @@ mod tests {
         let q = &batch.queries[0];
         match &q.source {
             Source::Symbols { kind_filter, where_clause, .. } => {
-                assert_eq!(*kind_filter, Some(vec!["fn".into(), "func".into(), "function".into()]));
+                assert_eq!(*kind_filter, Some(vec!["fn".into(), "func".into(), "function".into(), "def".into()]));
                 // One AND group with 2 conditions
                 assert_eq!(where_clause.len(), 1);
                 assert_eq!(where_clause[0].len(), 2);

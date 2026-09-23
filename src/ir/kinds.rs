@@ -6,8 +6,8 @@
 //! matching on kind strings locally.
 
 /// Free-standing function kinds across languages
-/// (Rust `fn`, Go `func`, TS `function`).
-pub const FUNCTION_KINDS: &[&str] = &["fn", "func", "function"];
+/// (Rust `fn`, Go `func`, TS `function`, Python `def`).
+pub const FUNCTION_KINDS: &[&str] = &["fn", "func", "function", "def"];
 
 /// Type-defining kinds across languages.
 pub const TYPE_KINDS: &[&str] = &[
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn classification() {
-        for k in ["fn", "func", "function"] {
+        for k in ["fn", "func", "function", "def"] {
             assert!(is_function_kind(k));
             assert!(is_callable_kind(k));
             assert!(!is_type_kind(k));

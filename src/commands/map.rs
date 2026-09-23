@@ -211,7 +211,7 @@ fn format_counts(counts: &[(String, usize)]) -> String {
 // --- Dependency signal ---
 
 /// Split a qualified name or import path into segments, accepting both `::`
-/// (Rust) and `.` (Java/TS) separators. Wildcards/braces are dropped.
+/// (Rust) and `.` (Java/TS/Python) separators. Wildcards/braces are dropped.
 fn path_segments(name: &str) -> Vec<&str> {
     let base = name.split('{').next().unwrap_or(name);
     base.split("::")
@@ -608,6 +608,18 @@ mod tests {
             counts_for(&syms),
             "struct×1  trait×1  const×1  namespace×1  fn×1  func×1  function×1"
         );
+    }
+
+    #[test]
+    fn python_kinds_are_native() {
+        let syms = vec![
+            sym("User", "class", "app/models.py"),
+            sym("load", "def", "app/models.py"),
+            sym("save", "def", "app/models.py"),
+            sym("MAX", "const", "app/models.py"),
+        ];
+        assert_eq!(counts_for(&syms), "class×1  const×1  def×2");
+        assert_eq!(inline_name(&sym("load", "def", "a.py")), "load");
     }
 
     #[test]

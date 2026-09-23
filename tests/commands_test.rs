@@ -148,3 +148,39 @@ fn show_json_format() {
     assert_eq!(arr[0]["name"], "Bar");
     assert_eq!(arr[0]["kind"], "struct");
 }
+
+// --- Python `def` is treated as a function by formatters ---
+
+fn python_def() -> Symbol {
+    let mut s = Symbol::new(
+        "fetch".to_string(),
+        "app.net.fetch".to_string(),
+        "def",
+        SourceLoc { file: PathBuf::from("app/net.py"), line: 7, col: 1 },
+        Visibility::Public,
+    );
+    s.signature = Some("async def fetch(url: str, timeout: float = 30.0) -> bytes".to_string());
+    s.params = vec![
+        Param { name: "url".to_string(), type_name: "str".to_string() },
+        Param { name: "timeout".to_string(), type_name: "float".to_string() },
+    ];
+    s.return_type = Some("bytes".to_string());
+    s.attributes = vec!["async".to_string()];
+    s
+}
+
+#[test]
+fn show_python_def_displays_params() {
+    let sym = python_def();
+    let output = show::format_text(&[&sym]);
+    assert!(output.contains("def app.net.fetch"), "{}", output);
+    assert!(output.contains("params: (url: str, timeout: float)"), "{}", output);
+    assert!(output.contains("returns: bytes"), "{}", output);
+}
+
+#[test]
+fn ls_python_def_shows_param_summary() {
+    let sym = python_def();
+    let extra = smartgrep::format::text::build_extra(&sym);
+    assert_eq!(extra, "(url: str, timeout: float) bytes");
+}

@@ -713,3 +713,99 @@ fn query_text_output_no_alias_for_short_paths() {
     assert!(!output.contains("[paths]"), "short paths should not trigger alias:\n{}", output);
     assert!(!output.contains("[P]"), "short paths should not use [P]:\n{}", output);
 }
+
+// --- Python: `def` vocabulary and cross-language umbrella ---
+
+fn py_sym(name: &str, qn: &str, kind: &str, file: &str, parent: Option<&str>) -> Symbol {
+    let mut s = Symbol::new(
+        name.to_string(),
+        qn.to_string(),
+        kind,
+        SourceLoc { file: PathBuf::from(file), line: 1, col: 1 },
+        Visibility::Public,
+    );
+    s.parent = parent.map(|p| p.to_string());
+    s
+}
+
+fn mixed_language_index() -> smartgrep::index::types::Index {
+    let symbols = vec![
+        py_sym("run", "crate::run", "fn", "src/lib.rs", None),
+        py_sym("Serve", "main.Serve", "func", "main.go", None),
+        py_sym("helper", "utils.helper", "function", "src/utils.ts", None),
+        py_sym("load_user", "app.users.load_user", "def", "app/users.py", None),
+        py_sym("fetch", "app.net.fetch", "def", "app/net.py", None),
+        py_sym("Repo", "app.users.Repo", "class", "app/users.py", None),
+        py_sym("SqlRepo", "app.users.SqlRepo", "class", "app/users.py", None),
+        py_sym("get", "app.users.SqlRepo.get", "method", "app/users.py", Some("SqlRepo")),
+    ];
+    let dependencies = vec![
+        Dependency {
+            from_qualified: "app.users.Repo".to_string(),
+            to_name: "Protocol".to_string(),
+            kind: DepKind::Implements,
+            loc: SourceLoc { file: PathBuf::from("app/users.py"), line: 3, col: 1 },
+        },
+        Dependency {
+            from_qualified: "app.users.SqlRepo".to_string(),
+            to_name: "Repo".to_string(),
+            kind: DepKind::Implements,
+            loc: SourceLoc { file: PathBuf::from("app/users.py"), line: 9, col: 1 },
+        },
+    ];
+    builder::build(&Ir { symbols, dependencies })
+}
+
+fn run_mixed(query_str: &str) -> Vec<engine::Row> {
+    let index = mixed_language_index();
+    let batch = parser::parse(query_str).unwrap();
+    engine::execute_query(&batch.queries[0], &index).unwrap()
+}
+
+fn names(rows: &[engine::Row]) -> Vec<String> {
+    let mut n: Vec<String> = rows.iter().map(|r| r.get("name").unwrap().to_string()).collect();
+    n.sort();
+    n
+}
+
+#[test]
+fn query_defs_is_python_only() {
+    let rows = run_mixed("defs");
+    assert_eq!(names(&rows), vec!["fetch", "load_user"]);
+    assert!(rows.iter().all(|r| r.get("kind").unwrap() == "def"));
+    assert_eq!(names(&run_mixed("def")), vec!["fetch", "load_user"]);
+}
+
+#[test]
+fn query_functions_umbrella_includes_def() {
+    let rows = run_mixed("functions");
+    assert_eq!(names(&rows), vec!["Serve", "fetch", "helper", "load_user", "run"]);
+}
+
+#[test]
+fn query_functions_umbrella_with_where_on_python_file() {
+    let rows = run_mixed("functions where file contains '.py'");
+    assert_eq!(names(&rows), vec!["fetch", "load_user"]);
+}
+
+#[test]
+fn query_python_classes_implementing() {
+    assert_eq!(names(&run_mixed("classes implementing Protocol")), vec!["Repo"]);
+    assert_eq!(names(&run_mixed("classes implementing Repo")), vec!["SqlRepo"]);
+}
+
+#[test]
+fn query_python_methods_by_parent() {
+    assert_eq!(names(&run_mixed("methods where parent = SqlRepo")), vec!["get"]);
+}
+
+#[test]
+fn ls_kind_filter_vocabulary_for_python() {
+    use smartgrep::query::parser::normalize_kind_filter;
+    assert_eq!(normalize_kind_filter("defs"), Some(vec!["def".to_string()]));
+    assert_eq!(normalize_kind_filter("def"), Some(vec!["def".to_string()]));
+    let umbrella = normalize_kind_filter("functions").unwrap();
+    for k in ["fn", "func", "function", "def"] {
+        assert!(umbrella.contains(&k.to_string()), "functions should include {}", k);
+    }
+}

@@ -191,8 +191,10 @@ Long file paths in text output are automatically shortened. `src/main/java/com/e
 - **Rust** — full support via tree-sitter-rust
 - **Java** — full support via tree-sitter-java
 - **Go** — full support via tree-sitter-go
+- **TypeScript** — full support via tree-sitter-typescript (`.ts`, `.tsx`)
+- **Python** — full support via tree-sitter-python (`.py`, `.pyi`)
 
-Adding a language means writing one parser. The IR layer and query engine are language-agnostic.
+Adding a language means writing one parser and registering it in `src/lang.rs`. The IR layer and query engine are language-agnostic.
 
 ---
 

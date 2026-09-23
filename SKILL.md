@@ -6,24 +6,24 @@ Full agent reference: `AGENTS_README.md` in this repo (if available) or see inli
 
 ## Supported languages
 
-smartgrep parses **Rust, Java, Go, and TypeScript** only. It has no knowledge of other file types.
+smartgrep parses **Rust, Java, Go, TypeScript, and Python** only. It has no knowledge of other file types.
 
-**Use smartgrep for:** `.rs`, `.go`, `.java`, `.ts`, `.tsx` files — structural questions about code.
+**Use smartgrep for:** `.rs`, `.go`, `.java`, `.ts`, `.tsx`, `.py`, `.pyi` files — structural questions about code.
 
-**For everything else** (`.md`, `.yaml`, `.toml`, `.json`, `.py`, `.js`, Dockerfiles, config files, documentation) — handle as you normally would without smartgrep. It has no knowledge of these file types.
+**For everything else** (`.md`, `.yaml`, `.toml`, `.json`, `.js`, Dockerfiles, config files, documentation) — handle as you normally would without smartgrep. It has no knowledge of these file types.
 
 Using smartgrep for code does not mean ignoring non-code files. Documentation and config often contain context the code index cannot surface.
 
 ## When to use smartgrep
 
 Use it when the user asks about:
-- Code structure, architecture, or organization in Rust, Java, Go, or TypeScript files
+- Code structure, architecture, or organization in Rust, Java, Go, TypeScript, or Python files
 - Finding classes, functions, interfaces, enums, records, structs, traits, namespaces
 - Dependencies between symbols or what references a symbol
-- Exploring an unfamiliar Rust/Java/Go/TypeScript codebase
+- Exploring an unfamiliar Rust/Java/Go/TypeScript/Python codebase
 - Finding implementations of an interface or trait
 - Listing endpoints, services, controllers, consumers
-- Any structural question that would otherwise need multiple grep/read calls across `.rs`, `.go`, `.java`, `.ts`, or `.tsx` files
+- Any structural question that would otherwise need multiple grep/read calls across `.rs`, `.go`, `.java`, `.ts`, `.tsx`, or `.py` files
 
 ## Detecting availability
 
@@ -100,14 +100,15 @@ Symbols use language-native kind strings (not a shared enum):
 | **Java** | class, interface, enum, method, record |
 | **Go** | func, method, struct, interface, const, type |
 | **TypeScript** | function, class, interface, enum, type, method, const, namespace |
+| **Python** | def, class, method, const, type |
 
 **Dependency kinds:** Call, TypeRef, Implements
 
 **`interfaces` vs `traits`:** `interfaces` = Java/Go/TS interface; `traits` = Rust trait. They are distinct.
 
 **Cross-language queries:**
-- `functions` → finds Rust fn, Go func, TS function (all function-like symbols)
-- `fns` → Rust only, `funcs` → Go only, `function` → TS only
+- `functions` → finds Rust fn, Go func, TS function, Python def (all function-like symbols)
+- `fns` → Rust only, `funcs` → Go only, `function` → TS only, `defs` → Python only
 
 ## Query DSL
 
@@ -170,6 +171,18 @@ smartgrep query "interfaces where file contains 'src/types/' | with fields"
 smartgrep query "functions where visibility = public and file contains 'src/'"
 ```
 
+### Python examples
+```bash
+# Python: classes inheriting a base (Implements = base classes)
+smartgrep query "classes implementing BaseModel | with fields"
+
+# Python: methods of a class (decorators like @property live in attributes)
+smartgrep query "methods where parent = Flask | show name, signature"
+
+# Python: route handlers
+smartgrep query "defs where attributes contains '.route(' | show name, file"
+```
+
 ## Large-repo warnings
 
 **Never run bare `smartgrep map` or `smartgrep ls functions` on a repo with 100+ files.** The output can be hundreds of lines and burns context budget without adding value. Always scope first:
@@ -187,7 +200,7 @@ smartgrep query "functions where file contains 'src/api/' | show name, file | li
 
 **Generated files are excluded by default.** Bindgen output, protobuf stubs, and vendor code are filtered out automatically. Use `--include-generated` only when you specifically need to inspect generated code.
 
-**node_modules** is automatically skipped during indexing.
+**node_modules** (and Python `venv`/`.venv`/`__pycache__`/`site-packages`) are automatically skipped during indexing.
 
 ## Output guidance
 

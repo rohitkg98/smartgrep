@@ -191,16 +191,67 @@ run_cmd "query functions with signature" \
     $SMARTGREP query '"functions | with signature"' --project-root "$SCRIPT_DIR/ts_project"
 
 # ──────────────────────────────────────────────────────────────────────
+# PYTHON PROJECT
+# ──────────────────────────────────────────────────────────────────────
+
+header "Python project (4 files: shop/__init__, models/base, models/user, services/user_service)"
+
+section "context — per-file structural summary"
+run_cmd "context __init__.py"        $SMARTGREP context "$SCRIPT_DIR/python_project/src/shop/__init__.py"
+run_cmd "context base.py"            $SMARTGREP context "$SCRIPT_DIR/python_project/src/shop/models/base.py"
+run_cmd "context user.py"            $SMARTGREP context "$SCRIPT_DIR/python_project/src/shop/models/user.py"
+run_cmd "context user_service.py"    $SMARTGREP context "$SCRIPT_DIR/python_project/src/shop/services/user_service.py"
+
+section "map — project overview"
+run_cmd "map" $SMARTGREP map --project-root "$SCRIPT_DIR/python_project"
+run_cmd "map --symbols" $SMARTGREP map --symbols --project-root "$SCRIPT_DIR/python_project"
+
+section "ls — kind listings"
+run_cmd "ls defs"       $SMARTGREP ls defs       --project-root "$SCRIPT_DIR/python_project"
+run_cmd "ls functions"  $SMARTGREP ls functions  --project-root "$SCRIPT_DIR/python_project"
+run_cmd "ls classes"    $SMARTGREP ls classes    --project-root "$SCRIPT_DIR/python_project"
+run_cmd "ls methods"    $SMARTGREP ls methods    --project-root "$SCRIPT_DIR/python_project"
+run_cmd "ls consts"     $SMARTGREP ls consts     --project-root "$SCRIPT_DIR/python_project"
+run_cmd "ls types"      $SMARTGREP ls types      --project-root "$SCRIPT_DIR/python_project"
+
+section "show — symbol detail"
+run_cmd "show User"          $SMARTGREP show User          --project-root "$SCRIPT_DIR/python_project"
+run_cmd "show UserService"   $SMARTGREP show UserService   --project-root "$SCRIPT_DIR/python_project"
+run_cmd "show register"      $SMARTGREP show register      --project-root "$SCRIPT_DIR/python_project"
+
+section "deps/refs"
+run_cmd "deps User"          $SMARTGREP deps User          --project-root "$SCRIPT_DIR/python_project"
+run_cmd "refs Entity"        $SMARTGREP refs Entity        --project-root "$SCRIPT_DIR/python_project"
+run_cmd "refs Validatable"   $SMARTGREP refs Validatable   --project-root "$SCRIPT_DIR/python_project"
+
+section "query — cross-file queries"
+run_cmd "query classes implementing Entity" \
+    $SMARTGREP query '"classes implementing Entity"' --project-root "$SCRIPT_DIR/python_project"
+run_cmd "query classes implementing Exception" \
+    $SMARTGREP query '"classes implementing Exception"' --project-root "$SCRIPT_DIR/python_project"
+run_cmd "query classes with fields" \
+    $SMARTGREP query '"classes | with fields"' --project-root "$SCRIPT_DIR/python_project"
+run_cmd "query methods where parent = User" \
+    $SMARTGREP query '"methods where parent = User | show name, signature"' --project-root "$SCRIPT_DIR/python_project"
+run_cmd "query defs with signature" \
+    $SMARTGREP query '"defs | with signature"' --project-root "$SCRIPT_DIR/python_project"
+run_cmd "query import deps" \
+    $SMARTGREP query '"deps where dep_kind = import | show from, to"' --project-root "$SCRIPT_DIR/python_project"
+
+# ──────────────────────────────────────────────────────────────────────
 # CROSS-LANGUAGE
 # ──────────────────────────────────────────────────────────────────────
 
 header "Cross-language queries (using main repo fixtures)"
 
-section "ls functions — should find fn + func + function"
+section "ls functions — should find fn + func + function + def"
 run_cmd "ls functions" $SMARTGREP ls functions --in tests/fixtures/
 
 section "ls fns — Rust only"
 run_cmd "ls fns" $SMARTGREP ls fns --in tests/fixtures/
+
+section "ls defs — Python only"
+run_cmd "ls defs" $SMARTGREP ls defs --in tests/fixtures/
 
 section "ls funcs — Go only"
 run_cmd "ls funcs" $SMARTGREP ls funcs --in tests/fixtures/

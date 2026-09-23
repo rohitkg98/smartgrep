@@ -31,18 +31,29 @@ Parser (tree-sitter) → IR → Index Builder → Index → Command
 
 ## Key design decisions
 - IR exists so we can add languages by writing one parser, without changing the index builder or commands
-- Parsers are tested against fixture files — small .rs/.java/.go/.ts files in tests/fixtures/
+- Parsers are tested against fixture files — small .rs/.java/.go/.ts/.py files in tests/fixtures/
 - Index builder is tested with hand-built IR — no parsing needed
 - Commands are tested with hand-built Index — no builder needed
 - Auto-indexing: queries trigger indexing implicitly. Re-indexes when source files change.
 
 ## File layout
 - `src/ir/` — IR types and validation
-- `src/parser/` — tree-sitter parsers (rust.rs, java.rs, go.rs, typescript.rs); `mod.rs` has `parse_by_extension` dispatch
+- `src/lang.rs` — language registry: extensions, parser fn, project markers, skip dirs per language
+- `src/parser/` — tree-sitter parsers (rust.rs, java.rs, go.rs, typescript.rs, python.rs); `mod.rs` has `parse_by_extension` dispatch (via the registry)
+- `src/ir/kinds.rs` — kind classification helpers (`is_function_kind`, `is_type_kind`, `kind_rank`)
 - `src/index/` — index types, builder, storage, auto-detection
 - `src/commands/` — CLI commands (context, ls, show, deps, refs)
 - `src/format/` — text table and JSON output
 - `tests/fixtures/` — small source files for parser tests
+
+## Adding a new language
+1. Add the tree-sitter grammar crate to `Cargo.toml` (must be compatible with the `tree-sitter` version in use).
+2. Write `src/parser/<lang>.rs` exposing `pub fn parse_file(path: &Path, source: &str) -> Result<Ir>`; declare it in `src/parser/mod.rs`. Use the language's own keywords as `kind` strings; reuse `src/parser/common.rs` helpers.
+3. Add a `Language { name, extensions, parse, project_markers, skip_dirs }` entry to `LANGUAGES` in `src/lang.rs`. That single entry drives file collection, parser dispatch, project-root detection, daemon file watching, and `Index::languages`.
+4. If the language introduces a new function-like or type-like kind, add it to `FUNCTION_KINDS` / `TYPE_KINDS` in `src/ir/kinds.rs` (the `functions` umbrella and formatters read from there), and add the user-facing term to `normalize_kind_term` in `src/query/parser.rs`.
+5. Bump `INDEX_VERSION` in `src/index/types.rs` so existing indexes rebuild and pick up the new files.
+6. Tests: a fixture in `tests/fixtures/`, `tests/parser_<lang>_test.rs`, and a `tests/regression/<lang>_project/` with a section in `tests/regression/run.sh`.
+7. Docs: language lists / vocabulary in CLAUDE.md, SKILL.md, AGENTS_README.md, README.md.
 
 ## Code Navigation
 Always use `smartgrep` for structural code exploration on this project. It is faster and more token-efficient than reading files or grepping.
@@ -53,13 +64,14 @@ Symbols use language-native kind strings, not a shared enum:
 - **Java:** class, interface, enum, method, record
 - **Go:** func, method, struct, interface, const, type
 - **TypeScript:** function, class, interface, enum, type, method, const, namespace
+- **Python:** def, class, method, const, type
 
 Dependency kinds: Call (was FunctionCall), TypeRef (was TypeReference), Implements (was TraitImpl)
 
 ### Cross-language queries
 Umbrella terms find symbols across all languages:
-- `functions` → finds Rust `fn`, Go `func`, TS `function`
-- `fns` → Rust only, `funcs` → Go only, `function` → TS only
+- `functions` → finds Rust `fn`, Go `func`, TS `function`, Python `def`
+- `fns` → Rust only, `funcs` → Go only, `function` → TS only, `defs` → Python only
 Language-specific terms target one language. Shared terms like `structs`, `interfaces`, `enums` work as before.
 
 ### Prefer smartgrep query for compound questions
@@ -109,6 +121,8 @@ smartgrep query "functions where name starts_with 'New' and file contains 'servi
 - **TS decorators** → stored in `attributes` (e.g., `classes where attributes contains '@Injectable'`)
 - **TS namespaces** → `namespaces` or `namespace` (kind="namespace", TS only)
 - **node_modules** → automatically skipped during indexing
+- **Python** → `def` = module-level function, `method` = function in a class body (nested functions skipped); base classes are `Implements` deps (`classes implementing BaseModel`); decorators in `attributes`; `const` = module-level UPPER_SNAKE assignment; `type` = `type X = ...`, `X: TypeAlias = ...`, `NewType`, or PascalCase `X = Union[...]`; qualified names are dotted module paths (`src/` stripped, `__init__` dropped)
+- **Python venvs/caches** (`venv`, `.venv`, `__pycache__`, `site-packages`, `.tox`, ...) → automatically skipped
 
 ### When to use smartgrep vs file reading
 - **Use smartgrep**: finding symbols, understanding structure, exploring dependencies, listing functions/structs
