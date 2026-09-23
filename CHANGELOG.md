@@ -6,6 +6,8 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-23
+
 ### Added
 - `smartgrep init`: one-step, non-interactive project onboarding for coding agents. Detects languages, builds the index, writes a short smartgrep block (between `<!-- smartgrep:start -->` / `<!-- smartgrep:end -->` markers, refreshed in place on re-run) into existing `CLAUDE.md`/`AGENTS.md` (or a new `CLAUDE.md`) with example commands using real symbols from the project and the kind vocabulary for detected languages only, installs the repo-scoped skill, and adds `.smartgrep/` to `.gitignore` in git repos. Flags: `--agents-md`, `--no-skill`, `--dry-run`. ([#7](https://github.com/rohitkg98/smartgrep/issues/7))
 - Prebuilt binaries for more platforms: Intel macOS, Linux armv7, armv6 (Raspberry Pi Zero/1), i686, riscv64, ppc64le, s390x and loongarch64, FreeBSD x86_64, and Windows x86_64/arm64. `install.sh` also works on Android (Termux), installing into `$PREFIX/bin`.
