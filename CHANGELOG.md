@@ -13,15 +13,13 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 - Releases include a `SHA256SUMS` file; `install.sh` and `install.ps1` verify the download against it.
 - `SMARTGREP_VERSION` pins the version to install and `SMARTGREP_INSTALL_DIR` overrides the install directory (both installers). Unsupported platforms get a pointer to `cargo install --git https://github.com/rohitkg98/smartgrep`.
 
-### Fixed
-- `install.sh` on Intel Macs failed with a 404 because no x86_64 macOS binary was published. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
-- `install.sh` in a Rosetta shell on Apple Silicon now installs the native arm64 binary.
-
 ### Changed
 - The `--daemon` background server is Unix-only (Linux, macOS, FreeBSD); it uses a Unix domain socket. On Windows `--daemon` prints a one-line notice and runs the command directly. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
 - Symbols, dependencies and command output are ordered by file path. Previously the order followed the filesystem's directory read order, so it differed between Linux, macOS and Windows. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
 
 ### Fixed
+- `install.sh` on Intel Macs failed with a 404 because no x86_64 macOS binary was published. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
+- `install.sh` in a Rosetta shell on Apple Silicon now installs the native arm64 binary.
 - smartgrep builds and runs on Windows. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
 - Windows: file paths in the index and in all output use `/`, and Rust/Java/TypeScript qualified names no longer pick up `\` from Windows paths, so output matches Linux and macOS for the same tree. `context <file>`, `--in`, `in '<path>'` and `file contains` accept `\` separators. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
 - `install-skill --global` on Windows: the home directory falls back to `%USERPROFILE%` when `HOME` is unset. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
