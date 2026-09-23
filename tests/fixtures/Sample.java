@@ -83,4 +83,35 @@ public class Container {
         void act();
     }
     public record NestedRecord(int val) {}
+
+    // Call-graph fixture: exercises call deps
+    public static class Dispatcher {
+        private final List<String> items = new ArrayList<>();
+        private static final Logger LOG = Logger.getLogger("dispatcher");
+
+        public Dispatcher(String name) {
+            super();
+            init(name);
+        }
+
+        void init(String name) {}
+
+        public void run(List<String> xs) {
+            helper();
+            helper();
+            Collections.sort(xs);
+            java.util.Objects.requireNonNull(xs);
+            this.items.add("a");
+            items.clear();
+            LOG.info("run");
+            Map<String, List<Integer>> m = new HashMap<String, List<Integer>>();
+            xs.forEach(x -> process(x));
+            xs.stream().map(String::trim).forEach(this::consume);
+            Runnable r = new Runnable() {
+                public void run() { anonCall(); }
+            };
+            super.toString();
+            build().finish();
+        }
+    }
 }

@@ -134,3 +134,43 @@ export namespace Validation {
         validate(value: string): boolean;
     }
 }
+
+// --- Call graph ---
+
+const registry = new Map<string, number>();
+registry.set('boot', 1);
+
+export class Dispatcher extends EventEmitter {
+    private items: string[] = [];
+
+    constructor() {
+        super();
+        this.setup();
+    }
+
+    private setup(): void {}
+
+    run(xs: string[]): void {
+        helper(1, 2);
+        helper(3, 4);
+        path.join('a', 'b');
+        Math.max(1, 2);
+        JSON.stringify(xs);
+        this.items.push('a');
+        console.log('run');
+        const m = new Map<string, Array<number>>();
+        const d = new Validation.Checker();
+        xs.forEach((x) => this.process(x));
+        identity<string>('x');
+        build().finish();
+        this.emit?.('done');
+    }
+}
+
+export const runAll = (ds: Dispatcher[]): void => {
+    ds.forEach((d) => d.run([]));
+    greet('all');
+    function inner() {
+        nestedCall();
+    }
+};

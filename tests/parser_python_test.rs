@@ -240,10 +240,130 @@ fn base_classes_are_implements_deps() {
 }
 
 #[test]
-fn generic_and_dotted_bases_strip_to_name_and_skip_kwargs() {
+fn bases_kept_as_written_minus_generics_and_skip_kwargs() {
     let ir = parse_fixture();
     // class Cache(Generic[T], cabc.Mapping, metaclass=type)
-    assert_eq!(implements_of(&ir, "app.sample.Cache"), vec!["Generic", "Mapping"]);
+    assert_eq!(implements_of(&ir, "app.sample.Cache"), vec!["Generic", "cabc.Mapping"]);
+}
+
+// ---------------------------------------------------------------------------
+// Call deps
+// ---------------------------------------------------------------------------
+
+fn calls_of<'a>(ir: &'a Ir, from: &str) -> Vec<&'a str> {
+    ir.dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == from)
+        .map(|d| d.to_name.as_str())
+        .collect()
+}
+
+const TOP: &str = "app.sample.top_level";
+
+#[test]
+fn call_deps_full_list_for_def() {
+    let ir = parse_fixture();
+    assert_eq!(
+        calls_of(&ir, TOP),
+        vec![
+            "normalize",
+            "os.path.join",
+            "pathmod.sep.join",
+            "cabc.Mapping.register",
+            "transform",
+            "convert",
+            "User.create",
+            "User",
+            "Cache",
+            "get_user",
+            "append",
+            "make",
+            "finish",
+            "info",
+        ]
+    );
+}
+
+#[test]
+fn call_plain_and_module_qualified() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, TOP);
+    assert!(calls.contains(&"get_user"));
+    // `import os`, `import ntpath as pathmod`, `import collections.abc as cabc`
+    assert!(calls.contains(&"os.path.join"));
+    assert!(calls.contains(&"pathmod.sep.join"));
+    assert!(calls.contains(&"cabc.Mapping.register"));
+    // PascalCase receiver = class
+    assert!(calls.contains(&"User.create"));
+}
+
+#[test]
+fn call_instance_receiver_reduced_to_method_name() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, TOP);
+    // opts.items.append(), make().finish(), logger.info(), helpers.normalize()
+    // (`from . import helpers` is not an `import` alias)
+    for name in ["append", "finish", "info", "normalize"] {
+        assert!(calls.contains(&name), "missing {}", name);
+    }
+    assert_eq!(calls_of(&ir, "app.sample.User.display_name"), vec!["title"]);
+}
+
+#[test]
+fn call_self_and_super() {
+    let ir = parse_fixture();
+    // super().__init__() → __init__ (super itself skipped); self._setup() → _setup
+    assert_eq!(calls_of(&ir, "app.sample.User.__init__"), vec!["__init__", "_setup"]);
+    // cls(name) names no symbol and is skipped
+    assert!(calls_of(&ir, "app.sample.User.create").is_empty());
+}
+
+#[test]
+fn call_constructor_and_generic_alias() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, TOP);
+    assert!(calls.contains(&"User")); // User("bob")
+    assert!(calls.contains(&"Cache")); // Cache[int]()
+    assert!(!calls.iter().any(|c| c.contains('[')));
+}
+
+#[test]
+fn call_in_nested_def_lambda_comprehension_attributed_to_enclosing() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, TOP);
+    assert!(calls.contains(&"normalize")); // nested def
+    assert!(calls.contains(&"convert")); // lambda
+    assert!(calls.contains(&"transform")); // comprehension
+    assert_eq!(calls_of(&ir, "app.sample.User.save"), vec!["_inner"]);
+}
+
+#[test]
+fn call_deps_deduped_first_loc_kept() {
+    let ir = parse_fixture();
+    let deps: Vec<_> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == TOP && d.to_name == "get_user")
+        .collect();
+    assert_eq!(deps.len(), 1);
+    assert_eq!(deps[0].loc.line, 107);
+}
+
+#[test]
+fn no_call_deps_from_module_or_class_level() {
+    let ir = parse_fixture();
+    // TypeVar(...)/NewType(...) at module level; field(default_factory=list) in class body
+    for name in ["TypeVar", "NewType", "field"] {
+        assert!(
+            !ir.dependencies.iter().any(|d| d.kind == DepKind::Call && d.to_name == name),
+            "unexpected call dep {}",
+            name
+        );
+    }
+    for d in ir.dependencies.iter().filter(|d| d.kind == DepKind::Call) {
+        let sym = ir.symbols.iter().find(|s| s.qualified_name == d.from_qualified).unwrap();
+        assert!(sym.kind == "def" || sym.kind == "method");
+    }
 }
 
 // ---------------------------------------------------------------------------

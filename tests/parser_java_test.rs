@@ -410,3 +410,119 @@ fn fixture_inner_record_in_class() {
     assert_eq!(nested_rec.params.len(), 1);
     assert_eq!(nested_rec.params[0].name, "val");
 }
+
+// ---------------------------------------------------------------------------
+// Call deps
+// ---------------------------------------------------------------------------
+
+const RUN: &str = "com.example.demo.Container.Dispatcher.run";
+
+fn calls_of<'a>(ir: &'a Ir, from: &str) -> Vec<&'a str> {
+    ir.dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == from)
+        .map(|d| d.to_name.as_str())
+        .collect()
+}
+
+#[test]
+fn call_deps_full_list_for_method() {
+    let ir = parse_fixture();
+    assert_eq!(
+        calls_of(&ir, RUN),
+        vec![
+            "helper",
+            "Collections.sort",
+            "java.util.Objects.requireNonNull",
+            "add",
+            "clear",
+            "info",
+            "HashMap",
+            "forEach",
+            "process",
+            "stream",
+            "map",
+            "String.trim",
+            "consume",
+            "Runnable",
+            "anonCall",
+            "toString",
+            "build",
+            "finish",
+        ]
+    );
+}
+
+#[test]
+fn call_plain_and_static_qualified() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    assert!(calls.contains(&"helper"));
+    assert!(calls.contains(&"Collections.sort"));
+    assert!(calls.contains(&"java.util.Objects.requireNonNull"));
+    assert_eq!(calls_of(&ir, "com.example.demo.Point.distance"), vec!["Math.sqrt"]);
+}
+
+#[test]
+fn call_instance_receiver_reduced_to_method_name() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    // this.items.add(), items.clear(), LOG.info() (ALL_CAPS = constant), build().finish(), super.toString()
+    for name in ["add", "clear", "info", "finish", "toString"] {
+        assert!(calls.contains(&name), "missing {}", name);
+    }
+    assert!(!calls.iter().any(|c| c.contains("items.") || c.starts_with("LOG") || c.starts_with("this")));
+    assert_eq!(calls_of(&ir, "com.example.demo.InternalHelper.process"), vec!["println"]);
+}
+
+#[test]
+fn call_constructor_generics_stripped() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    assert!(calls.contains(&"HashMap"));
+    assert!(calls.contains(&"Runnable"));
+    assert!(!calls.iter().any(|c| c.contains('<')));
+}
+
+#[test]
+fn call_in_lambda_and_anonymous_class_attributed_to_enclosing_method() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    assert!(calls.contains(&"process"));
+    assert!(calls.contains(&"anonCall"));
+    assert!(calls.contains(&"consume")); // this::consume
+    assert!(!ir.dependencies.iter().any(|d| d.from_qualified.ends_with("Runnable.run")));
+}
+
+#[test]
+fn call_deps_deduped_first_loc_kept() {
+    let ir = parse_fixture();
+    let helper: Vec<_> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == RUN && d.to_name == "helper")
+        .collect();
+    assert_eq!(helper.len(), 1);
+    assert_eq!(helper[0].loc.line, 100);
+}
+
+#[test]
+fn constructor_super_call_skipped() {
+    let ir = parse_fixture();
+    assert_eq!(
+        calls_of(&ir, "com.example.demo.Container.Dispatcher.Dispatcher"),
+        vec!["init"]
+    );
+    assert!(calls_of(&ir, "com.example.demo.InternalHelper.InternalHelper").is_empty());
+}
+
+#[test]
+fn no_call_deps_from_class_level_initializers() {
+    let ir = parse_fixture();
+    // `new ArrayList<>()` and `Logger.getLogger(...)` are field initializers.
+    assert!(!ir
+        .dependencies
+        .iter()
+        .any(|d| d.kind == DepKind::Call && (d.to_name == "ArrayList" || d.to_name == "Logger.getLogger")));
+    assert!(calls_of(&ir, "com.example.demo.Container.Dispatcher").is_empty());
+}

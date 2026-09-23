@@ -35,10 +35,7 @@ pub fn find_child_by_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
 /// (`collect::<Vec<_>>` → `collect`, `Vec::<u8>::new` → `Vec::new`) and
 /// whitespace trimmed. Returns `None` if nothing usable remains.
 pub fn call_target(text: &str) -> Option<String> {
-    let cleaned: String = crate::ir::names::strip_generics(text)
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
+    let cleaned = strip_type_args(text);
     if cleaned.is_empty() {
         None
     } else {
@@ -46,13 +43,64 @@ pub fn call_target(text: &str) -> Option<String> {
     }
 }
 
+/// Strip generic/type-argument sections and whitespace from a callee or type
+/// name: `Foo<Bar>` → `Foo`, `Map<K, List<V>>.of` → `Map.of`,
+/// `Generic[T]` → `Generic`, `Vec::<u8>::new` → `Vec::new`.
+pub fn strip_type_args(text: &str) -> String {
+    crate::ir::names::strip_generics(text)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect()
+}
+
+/// True if `name` starts with an uppercase letter (a class/type-like name).
+pub fn starts_uppercase(name: &str) -> bool {
+    name.chars().next().map_or(false, |c| c.is_uppercase())
+}
+
+/// True if `name` looks like an UPPER_SNAKE constant (`LOG`, `MAX_SIZE`): at least
+/// two alphabetic chars and none of them lowercase.
+pub fn is_all_caps(name: &str) -> bool {
+    let mut alpha = 0;
+    for c in name.chars().filter(|c| c.is_alphabetic()) {
+        if c.is_lowercase() {
+            return false;
+        }
+        alpha += 1;
+    }
+    alpha > 1
+}
+
+/// Visit every descendant of `node` (excluding `node` itself) in pre-order,
+/// iteratively, so deeply nested bodies can't overflow the stack.
+pub fn walk_descendants<'a>(node: Node<'a>, mut visit: impl FnMut(Node<'a>)) {
+    let mut cursor = node.walk();
+    if !cursor.goto_first_child() {
+        return;
+    }
+    loop {
+        visit(cursor.node());
+        if cursor.goto_first_child() {
+            continue;
+        }
+        loop {
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() || cursor.node() == node {
+                return;
+            }
+        }
+    }
+}
+
 /// Emit `DepKind::Call` deps for one function body.
 ///
 /// `calls` holds `(callee, loc)` pairs in any order. They are sorted by source
-/// position and deduplicated per callee, keeping the first occurrence, so each
-/// `(from_qualified, to_name)` appears once per function.
+/// position, empty names are dropped, and each callee is kept once (first
+/// occurrence), so every `(from_qualified, to_name)` appears once per function.
 pub fn push_call_deps(
-    ir: &mut crate::ir::types::Ir,
+    deps: &mut Vec<crate::ir::types::Dependency>,
     from_qualified: &str,
     mut calls: Vec<(String, SourceLoc)>,
 ) {
@@ -60,13 +108,15 @@ pub fn push_call_deps(
     calls.sort_by_key(|(_, l)| (l.line, l.col));
     let mut seen = std::collections::HashSet::new();
     for (to_name, loc) in calls {
-        if seen.insert(to_name.clone()) {
-            ir.dependencies.push(Dependency {
-                from_qualified: from_qualified.to_string(),
-                to_name,
-                kind: DepKind::Call,
-                loc,
-            });
+        let to_name = to_name.trim().to_string();
+        if to_name.is_empty() || !seen.insert(to_name.clone()) {
+            continue;
         }
+        deps.push(Dependency {
+            from_qualified: from_qualified.to_string(),
+            to_name,
+            kind: DepKind::Call,
+            loc,
+        });
     }
 }

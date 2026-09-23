@@ -4,7 +4,10 @@ use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
-use crate::parser::common::{find_child_by_kind, loc, node_text};
+use crate::parser::common::{
+    find_child_by_kind, is_all_caps, loc, node_text, push_call_deps, starts_uppercase,
+    strip_type_args, walk_descendants,
+};
 
 /// Derive a qualified package prefix from a Java file.
 /// If the file contains a `package` declaration, we use that.
@@ -369,11 +372,13 @@ fn extract_class_body_members(
         match child.kind() {
             "method_declaration" => {
                 if let Some(sym) = extract_method(&child, source, path, prefix, parent_name) {
+                    extract_calls(&child, source, path, &sym.qualified_name, ir);
                     ir.symbols.push(sym);
                 }
             }
             "constructor_declaration" => {
                 if let Some(sym) = extract_constructor(&child, source, path, prefix, parent_name) {
+                    extract_calls(&child, source, path, &sym.qualified_name, ir);
                     ir.symbols.push(sym);
                 }
             }
@@ -408,6 +413,7 @@ fn extract_interface_body_members(
         match child.kind() {
             "method_declaration" => {
                 if let Some(sym) = extract_method(&child, source, path, prefix, parent_name) {
+                    extract_calls(&child, source, path, &sym.qualified_name, ir);
                     ir.symbols.push(sym);
                 }
             }
@@ -660,6 +666,99 @@ fn extract_super_interfaces_deps(
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Call dependencies
+// ---------------------------------------------------------------------------
+
+/// Emit `DepKind::Call` deps for every call in the body of a method/constructor.
+/// Lambdas, anonymous classes and local classes inside the body are attributed to
+/// the enclosing method (they are not emitted as symbols themselves).
+fn extract_calls(node: &Node, source: &str, path: &Path, from_qualified: &str, ir: &mut Ir) {
+    let body = match node.child_by_field_name("body") {
+        Some(b) => b,
+        None => return,
+    };
+    let mut calls = Vec::new();
+    walk_descendants(body, |n| {
+        if let Some((name, at)) = callee(n, source) {
+            calls.push((name, loc(&at, path)));
+        }
+    });
+    push_call_deps(&mut ir.dependencies, from_qualified, calls);
+}
+
+/// Callee name for a call-like node, per the shared call-dep contract.
+fn callee<'a>(node: Node<'a>, source: &str) -> Option<(String, Node<'a>)> {
+    match node.kind() {
+        // foo(), Collections.sort(), this.bar(), x.items.add(), super.foo()
+        "method_invocation" => {
+            let name_node = node.child_by_field_name("name")?;
+            let name = node_text(&name_node, source).to_string();
+            match node.child_by_field_name("object") {
+                None => Some((name, node)),
+                Some(obj) => match static_receiver(obj, source) {
+                    Some(recv) => Some((format!("{}.{}", recv, name), obj)),
+                    None => Some((name, name_node)),
+                },
+            }
+        }
+        // new Foo<Bar>(...) → Foo
+        "object_creation_expression" => {
+            let ty = node.child_by_field_name("type")?;
+            Some((strip_type_args(node_text(&ty, source)), node))
+        }
+        // Foo::bar → Foo.bar, this::bar / x::bar → bar, Foo::new → Foo
+        "method_reference" => {
+            let target = node.named_child(0)?;
+            let last = node.child(node.child_count().checked_sub(1)?)?;
+            let recv = static_receiver(target, source).or_else(|| match target.kind() {
+                "type_identifier" | "generic_type" | "scoped_type_identifier" => {
+                    Some(strip_type_args(node_text(&target, source)))
+                }
+                _ => None,
+            });
+            if last.kind() == "new" {
+                return recv.map(|r| (r, node));
+            }
+            let name = node_text(&last, source).to_string();
+            match recv {
+                Some(r) => Some((format!("{}.{}", r, name), node)),
+                None => Some((name, last)),
+            }
+        }
+        // super(...) / this(...) (explicit_constructor_invocation) are skipped.
+        _ => None,
+    }
+}
+
+/// If `obj` is a class reference (`Collections`, `java.util.Collections`,
+/// `Outer.Inner`), return it as written; otherwise (instance receiver) None.
+/// A dotted chain of identifiers whose last segment starts uppercase counts as a
+/// class, except ALL_CAPS names (`LOG`, `INSTANCE`), which are treated as constants.
+fn static_receiver(obj: Node, source: &str) -> Option<String> {
+    fn is_dotted(n: Node) -> bool {
+        match n.kind() {
+            "identifier" => true,
+            "field_access" => {
+                n.child_by_field_name("object").map_or(false, is_dotted)
+                    && n.child_by_field_name("field")
+                        .map_or(false, |f| f.kind() == "identifier")
+            }
+            _ => false,
+        }
+    }
+    if !is_dotted(obj) {
+        return None;
+    }
+    let text = strip_type_args(node_text(&obj, source));
+    let last = text.rsplit('.').next().unwrap_or("");
+    if starts_uppercase(last) && !is_all_caps(last) {
+        Some(text)
+    } else {
+        None
     }
 }
 

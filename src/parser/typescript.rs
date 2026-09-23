@@ -4,7 +4,12 @@ use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
-use crate::parser::common::{find_child_by_kind, loc, node_text};
+use std::collections::{HashMap, HashSet};
+
+use crate::parser::common::{
+    find_child_by_kind, loc, node_text, push_call_deps, starts_uppercase, strip_type_args,
+    walk_descendants,
+};
 
 /// Parse a TypeScript or TSX source file and return the IR.
 pub fn parse_file(path: &Path, source: &str) -> Result<Ir> {
@@ -26,8 +31,139 @@ pub fn parse_file(path: &Path, source: &str) -> Result<Ir> {
     let prefix = module_prefix_from_path(path);
 
     extract_items(tree.root_node(), source, path, &prefix, false, None, &mut ir);
+    extract_call_deps(tree.root_node(), source, path, &mut ir);
 
     Ok(ir)
+}
+
+// ---------------------------------------------------------------------------
+// Call dependencies
+// ---------------------------------------------------------------------------
+
+/// Second pass: find the nodes of every function/method symbol emitted above (matched
+/// by source position) and emit `DepKind::Call` deps for the calls in their bodies.
+/// Emitted functions never nest (bodies aren't descended into during extraction), so
+/// nested functions, arrows and class expressions inside a body are attributed to it.
+fn extract_call_deps(root: Node, source: &str, path: &Path, ir: &mut Ir) {
+    let emitted: HashMap<(usize, usize), String> = ir
+        .symbols
+        .iter()
+        .filter(|s| s.kind == "function" || s.kind == "method")
+        .map(|s| ((s.loc.line, s.loc.col), s.qualified_name.clone()))
+        .collect();
+    if emitted.is_empty() {
+        return;
+    }
+    let imports = import_bindings(root, source);
+
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let body = match node.kind() {
+            "function_declaration" | "method_definition" => node.child_by_field_name("body"),
+            "variable_declarator" => node
+                .child_by_field_name("value")
+                .filter(|v| v.kind() == "arrow_function")
+                .and_then(|v| v.child_by_field_name("body")),
+            _ => None,
+        };
+        let pos = node.start_position();
+        if let (Some(body), Some(qn)) = (body, emitted.get(&(pos.row + 1, pos.column + 1))) {
+            let mut calls = Vec::new();
+            walk_descendants(body, |n| {
+                if let Some((name, at)) = callee(n, source, &imports) {
+                    calls.push((name, loc(&at, path)));
+                }
+            });
+            push_call_deps(&mut ir.dependencies, qn, calls);
+            continue;
+        }
+        let mut cursor = node.walk();
+        let children: Vec<Node> = node.named_children(&mut cursor).collect();
+        stack.extend(children.into_iter().rev());
+    }
+}
+
+/// Local names bound by import statements: default, namespace (`* as x`) and
+/// named (`{ a, b as c }`) bindings.
+fn import_bindings(root: Node, source: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    let mut cursor = root.walk();
+    for stmt in root.named_children(&mut cursor) {
+        if stmt.kind() != "import_statement" {
+            continue;
+        }
+        walk_descendants(stmt, |n| match n.kind() {
+            "import_clause" | "namespace_import" => {
+                if let Some(id) = find_child_by_kind(&n, "identifier") {
+                    out.insert(node_text(&id, source).to_string());
+                }
+            }
+            "import_specifier" => {
+                if let Some(id) = n
+                    .child_by_field_name("alias")
+                    .or_else(|| n.child_by_field_name("name"))
+                {
+                    out.insert(node_text(&id, source).to_string());
+                }
+            }
+            _ => {}
+        });
+    }
+    out
+}
+
+/// Callee name for a call-like node, per the shared call-dep contract.
+fn callee<'a>(node: Node<'a>, source: &str, imports: &HashSet<String>) -> Option<(String, Node<'a>)> {
+    let target = match node.kind() {
+        "call_expression" => node.child_by_field_name("function")?,
+        "new_expression" => node.child_by_field_name("constructor")?,
+        _ => return None,
+    };
+    match target.kind() {
+        "identifier" => Some((node_text(&target, source).to_string(), node)),
+        "member_expression" => {
+            let prop = target.child_by_field_name("property")?;
+            let name = node_text(&prop, source).to_string();
+            let obj = target.child_by_field_name("object")?;
+            match static_receiver(obj, source, imports) {
+                Some(recv) => Some((format!("{}.{}", recv, name), obj)),
+                None => Some((name, prop)),
+            }
+        }
+        // super(...), import(...), f()(), (a || b)(), arr[i]() → skipped.
+        _ => None,
+    }
+    .map(|(name, at)| (strip_type_args(&name), at))
+}
+
+/// If `obj` is a namespace/module/class reference — a dotted identifier chain whose
+/// first segment is an import binding, or whose last segment starts uppercase
+/// (`Math`, `JSON`, `Foo.Bar`) — return it as written; otherwise (instance receiver
+/// such as `this`, `this.repo`, `console`, `a()`) None.
+fn static_receiver(obj: Node, source: &str, imports: &HashSet<String>) -> Option<String> {
+    fn is_dotted(n: Node) -> bool {
+        match n.kind() {
+            "identifier" => true,
+            "member_expression" => {
+                n.child_by_field_name("object").map_or(false, is_dotted)
+                    && n.child_by_field_name("property")
+                        .map_or(false, |p| p.kind() == "property_identifier")
+                    && find_child_by_kind(&n, "optional_chain").is_none()
+            }
+            _ => false,
+        }
+    }
+    if !is_dotted(obj) {
+        return None;
+    }
+    let text = strip_type_args(node_text(&obj, source));
+    let first = text.split('.').next().unwrap_or("");
+    let last = text.rsplit('.').next().unwrap_or("");
+    if imports.contains(first) || starts_uppercase(last) {
+        Some(text)
+    } else {
+        None
+    }
 }
 
 /// Derive a module prefix from the file path.

@@ -445,3 +445,122 @@ fn namespace_function_qualified_name() {
         .unwrap();
     assert_eq!(is_valid.qualified_name, "services.Validation.isValid");
 }
+
+// ---------------------------------------------------------------------------
+// Call deps
+// ---------------------------------------------------------------------------
+
+fn calls_of<'a>(ir: &'a Ir, from: &str) -> Vec<&'a str> {
+    ir.dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == from)
+        .map(|d| d.to_name.as_str())
+        .collect()
+}
+
+const RUN: &str = "services.Dispatcher.run";
+
+#[test]
+fn call_deps_full_list_for_method() {
+    let ir = parse_fixture();
+    assert_eq!(
+        calls_of(&ir, RUN),
+        vec![
+            "helper",
+            "path.join",
+            "Math.max",
+            "JSON.stringify",
+            "push",
+            "log",
+            "Map",
+            "Validation.Checker",
+            "forEach",
+            "process",
+            "identity",
+            "build",
+            "finish",
+            "emit",
+        ]
+    );
+}
+
+#[test]
+fn call_plain_and_namespace_qualified() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    assert!(calls.contains(&"helper"));
+    // `path` is an `import * as path` binding; Math/JSON are PascalCase-ish globals
+    assert!(calls.contains(&"path.join"));
+    assert!(calls.contains(&"Math.max"));
+    assert!(calls.contains(&"JSON.stringify"));
+}
+
+#[test]
+fn call_instance_receiver_reduced_to_method_name() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    for name in ["push", "log", "finish", "emit"] {
+        assert!(calls.contains(&name), "missing {}", name);
+    }
+    assert!(!calls.iter().any(|c| c.starts_with("this") || c.starts_with("console")));
+    assert_eq!(calls_of(&ir, "services.Dispatcher.constructor"), vec!["setup"]);
+}
+
+#[test]
+fn call_constructor_and_generics_stripped() {
+    let ir = parse_fixture();
+    let calls = calls_of(&ir, RUN);
+    assert!(calls.contains(&"Map"));
+    assert!(calls.contains(&"Validation.Checker"));
+    assert!(calls.contains(&"identity")); // identity<string>(...)
+    assert!(!calls.iter().any(|c| c.contains('<')));
+    assert_eq!(calls_of(&ir, "services.fetchUser"), vec!["Promise.resolve", "UserService"]);
+}
+
+#[test]
+fn call_in_arrow_and_nested_function_attributed_to_enclosing() {
+    let ir = parse_fixture();
+    assert!(calls_of(&ir, RUN).contains(&"process")); // xs.forEach((x) => this.process(x))
+    // runAll is an arrow-function const: its body is walked, nested fn attributed to it
+    assert_eq!(calls_of(&ir, "services.runAll"), vec!["forEach", "run", "greet", "nestedCall"]);
+}
+
+#[test]
+fn call_deps_deduped_first_loc_kept() {
+    let ir = parse_fixture();
+    let helper: Vec<_> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == RUN && d.to_name == "helper")
+        .collect();
+    assert_eq!(helper.len(), 1);
+    assert_eq!(helper[0].loc.line, 154);
+}
+
+#[test]
+fn super_call_skipped_and_no_module_level_calls() {
+    let ir = parse_fixture();
+    assert!(!ir.dependencies.iter().any(|d| d.kind == DepKind::Call && d.to_name == "super"));
+    // `new Map()` / `registry.set()` at module level have no enclosing function
+    assert!(!ir.dependencies.iter().any(|d| d.kind == DepKind::Call && d.to_name == "set"));
+    let froms: Vec<&str> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call)
+        .map(|d| d.from_qualified.as_str())
+        .collect();
+    for f in froms {
+        let sym = ir.symbols.iter().find(|s| s.qualified_name == f).expect(f);
+        assert!(sym.kind == "function" || sym.kind == "method", "{} is {}", f, sym.kind);
+    }
+}
+
+#[test]
+fn tsx_calls() {
+    let src = "import React from 'react';\nexport function App() {\n  const [x, setX] = useState(0);\n  return <div onClick={() => setX(inc(x))}>{React.createElement('b')}</div>;\n}\n";
+    let ir = parse_file(Path::new("src/App.tsx"), src).unwrap();
+    assert_eq!(
+        calls_of(&ir, "App"),
+        vec!["useState", "setX", "inc", "React.createElement"]
+    );
+}

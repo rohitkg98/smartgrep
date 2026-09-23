@@ -4,7 +4,12 @@ use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
-use crate::parser::common::{loc, node_text};
+use std::collections::HashSet;
+
+use crate::parser::common::{
+    is_all_caps, loc, node_text, push_call_deps, starts_uppercase, strip_type_args,
+    walk_descendants,
+};
 
 /// Parse a Python source file (`.py` / `.pyi`) and return the IR.
 ///
@@ -30,6 +35,7 @@ pub fn parse_file(path: &Path, source: &str) -> Result<Ir> {
         path,
         package: package_path(path, &module),
         module,
+        module_aliases: module_aliases(tree.root_node(), source),
     };
 
     let mut ir = Ir::default();
@@ -158,6 +164,9 @@ struct Ctx<'s> {
     path: &'s Path,
     module: String,
     package: Vec<String>,
+    /// Local names bound by `import x` / `import x.y` (→ `x`) / `import x as y` (→ `y`)
+    /// anywhere in the file; calls through them are kept module-qualified.
+    module_aliases: HashSet<String>,
 }
 
 impl<'s> Ctx<'s> {
@@ -191,6 +200,7 @@ impl<'s> Ctx<'s> {
             "import_from_statement" => self.import_from_statement(stmt, ir),
             "function_definition" => {
                 let sym = self.function(stmt, &[], None);
+                self.call_deps(stmt, &sym.qualified_name, ir);
                 ir.symbols.push(sym);
             }
             "class_definition" => self.class(stmt, &[], None, ir),
@@ -200,6 +210,7 @@ impl<'s> Ctx<'s> {
                     match def.kind() {
                         "function_definition" => {
                             let sym = self.function(def, &decorators, None);
+                            self.call_deps(def, &sym.qualified_name, ir);
                             ir.symbols.push(sym);
                         }
                         "class_definition" => self.class(def, &decorators, None, ir),
@@ -471,6 +482,92 @@ impl<'s> Ctx<'s> {
         sym
     }
 
+    /// `DepKind::Call` deps for every call in a def/method body. Nested defs, lambdas,
+    /// comprehensions and local classes are attributed to this function.
+    fn call_deps(&self, def: Node, from_qualified: &str, ir: &mut Ir) {
+        let body = match def.child_by_field_name("body") {
+            Some(b) => b,
+            None => return,
+        };
+        let mut calls = Vec::new();
+        walk_descendants(body, |n| {
+            if n.kind() != "call" {
+                return;
+            }
+            if let Some((name, at)) = n
+                .child_by_field_name("function")
+                .and_then(|f| self.callee(f, n))
+            {
+                calls.push((name, loc(&at, self.path)));
+            }
+        });
+        push_call_deps(&mut ir.dependencies, from_qualified, calls);
+    }
+
+    /// Callee name for the `function` part of a call, per the shared call-dep contract:
+    /// `foo()` → `foo`; `os.path.join()` (module alias) / `Foo.create()` (PascalCase) kept
+    /// as written; `self.x()`, `cls.x()`, `obj.items.add()`, `a().b()`, `super().x()` →
+    /// method name only; `super()` itself skipped; `Foo[int]()` → `Foo`.
+    fn callee<'a>(&self, target: Node<'a>, call: Node<'a>) -> Option<(String, Node<'a>)> {
+        match target.kind() {
+            "identifier" => {
+                let name = self.text(&target);
+                // `super()` is skipped per contract; `cls(...)`/`self(...)` name no symbol.
+                if matches!(name, "super" | "cls" | "self") {
+                    None
+                } else {
+                    Some((name.to_string(), call))
+                }
+            }
+            "attribute" => {
+                let attr = target.child_by_field_name("attribute")?;
+                let name = self.text(&attr).to_string();
+                let obj = target.child_by_field_name("object")?;
+                match self.static_receiver(obj) {
+                    Some(recv) => Some((format!("{}.{}", recv, name), obj)),
+                    None => Some((name, attr)),
+                }
+            }
+            // Generic alias call: `Foo[int]()` → `Foo`. Other subscripts (`handlers[k]()`) skipped.
+            "subscript" => {
+                let value = target.child_by_field_name("value")?;
+                let text = self.static_receiver(value).or_else(|| {
+                    (value.kind() == "identifier" && starts_uppercase(self.text(&value)))
+                        .then(|| self.text(&value).to_string())
+                })?;
+                Some((strip_type_args(&text), call))
+            }
+            _ => None,
+        }
+    }
+
+    /// If `obj` is a dotted identifier chain that names a module (first segment is an
+    /// `import`ed module/alias) or a class (last segment PascalCase, not ALL_CAPS),
+    /// return it as written; `self`/`cls` and other instance receivers → None.
+    fn static_receiver(&self, obj: Node) -> Option<String> {
+        fn is_dotted(n: Node) -> bool {
+            match n.kind() {
+                "identifier" => true,
+                "attribute" => n.child_by_field_name("object").map_or(false, is_dotted),
+                _ => false,
+            }
+        }
+        if !is_dotted(obj) {
+            return None;
+        }
+        let text = strip_type_args(self.text(&obj));
+        let first = text.split('.').next().unwrap_or("");
+        let last = text.rsplit('.').next().unwrap_or("");
+        if matches!(first, "self" | "cls") {
+            return None;
+        }
+        if self.module_aliases.contains(first) || (starts_uppercase(last) && !is_all_caps(last)) {
+            Some(text)
+        } else {
+            None
+        }
+    }
+
     fn params(&self, params_node: Node) -> Vec<Param> {
         let mut out = Vec::new();
         let mut cursor = params_node.walk();
@@ -619,6 +716,7 @@ impl<'s> Ctx<'s> {
                         self.init_fields(body, fields);
                     }
                 }
+                self.call_deps(def, &sym.qualified_name, ir);
                 ir.symbols.push(sym);
             }
             "class_definition" => self.class(def, &decorators, Some((class_name, class_qn)), ir),
@@ -692,14 +790,37 @@ fn push_field(fields: &mut Vec<Field>, name: String, type_name: String) {
     fields.push(Field { name, type_name, visibility: vis });
 }
 
-/// Name of a base class expression: `Bar` → Bar, `mod.Baz` → Baz,
-/// `Generic[T]` → Generic. Keyword args (`metaclass=M`) and splats → None.
+/// Local names bound by `import` statements anywhere in the file:
+/// `import a.b` → `a`, `import a.b as c` → `c`. (`from x import y` is not included.)
+fn module_aliases(root: Node, source: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    walk_descendants(root, |n| {
+        if n.kind() != "import_statement" {
+            return;
+        }
+        let mut cursor = n.walk();
+        for name in n.children_by_field_name("name", &mut cursor) {
+            let bound = match name.kind() {
+                "aliased_import" => name
+                    .child_by_field_name("alias")
+                    .map(|a| node_text(&a, source).to_string()),
+                _ => node_text(&name, source).split('.').next().map(|s| s.trim().to_string()),
+            };
+            if let Some(b) = bound.filter(|b| !b.is_empty()) {
+                out.insert(b);
+            }
+        }
+    });
+    out
+}
+
+/// Name of a base class expression, as written minus generic subscripts:
+/// `Bar` → Bar, `mod.Baz` → mod.Baz, `Generic[T]` → Generic.
+/// Keyword args (`metaclass=M`) and splats → None.
 fn base_name(node: Node, source: &str) -> Option<String> {
     match node.kind() {
         "identifier" => Some(node_text(&node, source).to_string()),
-        "attribute" => node
-            .child_by_field_name("attribute")
-            .map(|a| node_text(&a, source).to_string()),
+        "attribute" => Some(strip_type_args(node_text(&node, source))),
         "subscript" => node.child_by_field_name("value").and_then(|v| base_name(v, source)),
         "call" => node.child_by_field_name("function").and_then(|f| base_name(f, source)),
         _ => None,

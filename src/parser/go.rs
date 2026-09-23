@@ -268,7 +268,7 @@ fn extract_calls(
             stack.push(child);
         }
     }
-    push_call_deps(ir, from_qualified, calls);
+    push_call_deps(&mut ir.dependencies, from_qualified, calls);
 }
 
 /// `Foo()` → `Foo`; `fmt.Println()` → `fmt.Println` when `fmt` is an imported

@@ -47,6 +47,8 @@ class User(BaseModel):
     __slots__ = ()
 
     def __init__(self, name: str, age: int = 0) -> None:
+        super().__init__()
+        self._setup()
         self.name = name
         self.email: str | None = None
         if age > 0:
@@ -92,8 +94,21 @@ class _Hidden:
 
 def top_level(a, b: int, c=1, d: str = "x", *rest, **opts) -> dict[str, int]:
     def nested_helper():
-        return 2
+        return helpers.normalize(a)
 
+    os.path.join("a", "b")
+    pathmod.sep.join([])
+    cabc.Mapping.register(dict)
+    items = [transform(x) for x in rest]
+    fn = lambda v: convert(v)
+    User.create("x")
+    User("bob")
+    Cache[int]()
+    get_user(1)
+    get_user(2)
+    opts.items.append(1)
+    make().finish()
+    logger.info("x")
     return {}
 
 
