@@ -6,4 +6,5 @@ pub mod index;
 pub mod ir;
 pub mod lang;
 pub mod parser;
+pub mod paths;
 pub mod query;

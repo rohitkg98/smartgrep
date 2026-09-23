@@ -9,6 +9,8 @@ use crate::query::parser::normalize_kind_filter;
 /// Run the `ls` command: list symbols, optionally filtered by kind and file path.
 pub fn run(symbol_type: &Option<String>, in_path: &Option<String>, format_str: &str, project_root: &Option<std::path::PathBuf>, use_daemon: bool) -> Result<()> {
     let root = super::resolve_root(project_root)?;
+    // Stored paths use `/`; accept native (e.g. Windows `\`) separators in --in.
+    let in_path = &in_path.as_deref().map(crate::paths::to_slash);
 
     // Try daemon first (auto-starts if needed, skipped if --no-daemon)
     let kind_arg = symbol_type.as_deref().unwrap_or("");

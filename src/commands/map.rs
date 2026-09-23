@@ -20,6 +20,8 @@ pub fn run(
     project_root: &Option<PathBuf>,
 ) -> Result<()> {
     let root = super::resolve_root(project_root)?;
+    // Stored paths use `/`; accept native (e.g. Windows `\`) separators in --in.
+    let in_path = &in_path.as_deref().map(crate::paths::to_slash);
     let start = std::time::Instant::now();
     let index = auto::ensure_index(&root)?;
 
@@ -136,7 +138,8 @@ fn dir_at_depth(rel_file: &Path, depth: Option<usize>) -> PathBuf {
 fn limit_dir_depth(dir: &Path, depth: Option<usize>) -> PathBuf {
     match depth {
         None => dir.to_path_buf(),
-        Some(d) => dir.components().take(d).collect(),
+        // Collecting components joins with the native separator; keep `/`.
+        Some(d) => crate::paths::normalize(&dir.components().take(d).collect::<PathBuf>()),
     }
 }
 
@@ -306,7 +309,7 @@ fn outgoing_dirs(
         };
 
         if target_dir != this_dir {
-            let s = target_dir.display().to_string();
+            let s = crate::paths::path_to_slash(&target_dir);
             if !s.is_empty() {
                 dirs.insert(s);
             }
@@ -380,7 +383,7 @@ fn format_summary(
             let dir_str = if dir.as_os_str().is_empty() {
                 "./".to_string()
             } else {
-                format!("{}/", dir.display())
+                format!("{}/", crate::paths::path_to_slash(dir))
             };
 
             let n = indices.len();
@@ -453,7 +456,7 @@ fn format_symbols(
         let dir_str = if dir.as_os_str().is_empty() {
             "./".to_string()
         } else {
-            format!("{}/", dir.display())
+            format!("{}/", crate::paths::path_to_slash(dir))
         };
         lines.push(dir_str);
 
@@ -462,7 +465,7 @@ fn format_symbols(
             .iter()
             .map(|&i| {
                 let rel = relative_path(&file_syms[i].0, root);
-                rel.strip_prefix(dir).unwrap_or(rel).display().to_string()
+                crate::paths::path_to_slash(rel.strip_prefix(dir).unwrap_or(rel))
             })
             .collect();
 
@@ -526,7 +529,7 @@ fn format_json(
     let dirs: Vec<JsonDir> = groups
         .iter()
         .map(|(dir, indices)| {
-            let dir_str = dir.display().to_string();
+            let dir_str = crate::paths::path_to_slash(dir);
             let counts = count_by_kind(file_syms, indices);
             let abs_files: Vec<&PathBuf> = indices.iter().map(|&i| &file_syms[i].0).collect();
             let outgoing = outgoing_dirs(&abs_files, index, root, dir, depth, module_dir_map);
@@ -537,7 +540,7 @@ fn format_json(
                     let (file, syms) = &file_syms[i];
                     let rel = relative_path(file, root);
                     JsonFile {
-                        file: rel.display().to_string(),
+                        file: crate::paths::path_to_slash(rel),
                         symbols: syms
                             .iter()
                             .map(|s| JsonSymbol {

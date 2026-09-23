@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
             commands::log_cmd::run(limit, stats, &cli.project_root)?;
         }
         Command::RunServer { idle_timeout } => {
-            smartgrep::daemon::server::run_server_cmd(&cli.project_root, idle_timeout)?;
+            smartgrep::daemon::run_server_cmd(&cli.project_root, idle_timeout)?;
         }
         Command::InstallSkill { global } => {
             commands::install_skill::run(global)?;

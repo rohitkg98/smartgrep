@@ -57,6 +57,9 @@ pub fn collect_sources(root: &Path) -> Vec<PathBuf> {
             files.push(path.to_path_buf());
         }
     }
+    // Directory read order is filesystem-dependent (ext4 hash order, APFS/NTFS
+    // sorted); sort so symbol order, and so all output, is the same on every OS.
+    files.sort();
     files
 }
 

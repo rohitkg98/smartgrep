@@ -9,6 +9,13 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 ### Added
 - `smartgrep init`: one-step, non-interactive project onboarding for coding agents. Detects languages, builds the index, writes a short smartgrep block (between `<!-- smartgrep:start -->` / `<!-- smartgrep:end -->` markers, refreshed in place on re-run) into existing `CLAUDE.md`/`AGENTS.md` (or a new `CLAUDE.md`) with example commands using real symbols from the project and the kind vocabulary for detected languages only, installs the repo-scoped skill, and adds `.smartgrep/` to `.gitignore` in git repos. Flags: `--agents-md`, `--no-skill`, `--dry-run`. ([#7](https://github.com/rohitkg98/smartgrep/issues/7))
 
+### Changed
+- Symbols, dependencies and command output are ordered by file path. Previously the order followed the filesystem's directory read order, so it differed between Linux, macOS and Windows. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
+
+### Fixed
+- Windows: file paths in the index and in all output use `/`, and Rust/Java/TypeScript qualified names no longer pick up `\` from Windows paths, so output matches Linux and macOS for the same tree. `context <file>`, `--in`, `in '<path>'` and `file contains` accept `\` separators. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
+- Files with CRLF line endings: multi-line signatures no longer contain `\r`.
+
 ## [0.4.0] - 2026-09-23
 
 ### Added
