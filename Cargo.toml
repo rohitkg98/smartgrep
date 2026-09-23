@@ -33,3 +33,6 @@ notify = { version = "6", features = ["macos_fsevent"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 notify = { version = "6" }
+
+[dev-dependencies]
+tempfile = "3"

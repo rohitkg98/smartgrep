@@ -51,6 +51,7 @@ smartgrep show <name>             # detail for a symbol
 smartgrep deps <name>             # what does X depend on?
 smartgrep refs <name>             # what references X?
 smartgrep context path/to/file    # structural summary of a file
+smartgrep init                    # one-time project setup: index, CLAUDE.md block, skill, .gitignore
 ```
 
 ## How to explore an unfamiliar codebase

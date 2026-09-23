@@ -46,7 +46,27 @@ Requires Rust 1.70+.
 
 ---
 
+## Quick start
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | sh
+cd your-project
+smartgrep init
+```
+
+`smartgrep init` makes the project agent-ready in one non-interactive step: it detects languages, builds the index, adds a short smartgrep section (between `<!-- smartgrep:start -->` / `<!-- smartgrep:end -->` markers) to `CLAUDE.md` and/or `AGENTS.md` with examples that use your project's real symbols, installs the repo-scoped Claude Code skill, and adds `.smartgrep/` to `.gitignore`. Re-running it refreshes the section in place; nothing outside the markers is touched.
+
+```bash
+smartgrep init --dry-run     # show what would change, write nothing
+smartgrep init --agents-md   # also create/update AGENTS.md
+smartgrep init --no-skill    # skip .claude/skills/smartgrep/SKILL.md
+```
+
+---
+
 ## Giving smartgrep to Claude
+
+`smartgrep init` (above) covers this for a single repo. To install only the skill:
 
 Install as a Claude Code skill so Claude automatically uses smartgrep for structural questions — no prompting needed:
 

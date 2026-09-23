@@ -18,6 +18,7 @@ cargo run -- show <name>                  # detail for a symbol
 cargo run -- deps <name>                  # what does X depend on?
 cargo run -- refs <name>                  # what references X?
 cargo run -- index                        # force re-index (usually implicit)
+cargo run -- init --dry-run               # preview onboarding: index + CLAUDE.md block + skill + .gitignore
 ```
 
 ## Architecture: 3 layers, 2 contracts
@@ -49,7 +50,7 @@ Parser (tree-sitter) → IR → Index Builder → Index → Command
 ## Adding a new language
 1. Add the tree-sitter grammar crate to `Cargo.toml` (must be compatible with the `tree-sitter` version in use).
 2. Write `src/parser/<lang>.rs` exposing `pub fn parse_file(path: &Path, source: &str) -> Result<Ir>`; declare it in `src/parser/mod.rs`. Use the language's own keywords as `kind` strings; reuse `src/parser/common.rs` helpers.
-3. Add a `Language { name, extensions, parse, project_markers, skip_dirs }` entry to `LANGUAGES` in `src/lang.rs`. That single entry drives file collection, parser dispatch, project-root detection, daemon file watching, and `Index::languages`.
+3. Add a `Language { name, display_name, extensions, parse, project_markers, skip_dirs, kinds }` entry to `LANGUAGES` in `src/lang.rs`. That single entry drives file collection, parser dispatch, project-root detection, daemon file watching, `Index::languages`, and the vocabulary line `smartgrep init` writes (`kinds` = every kind string the parser emits).
 4. If the language introduces a new function-like or type-like kind, add it to `FUNCTION_KINDS` / `TYPE_KINDS` in `src/ir/kinds.rs` (the `functions` umbrella and formatters read from there), and add the user-facing term to `normalize_kind_term` in `src/query/parser.rs`.
 5. Bump `INDEX_VERSION` in `src/index/types.rs` so existing indexes rebuild and pick up the new files.
 6. Tests: a fixture in `tests/fixtures/`, `tests/parser_<lang>_test.rs`, and a `tests/regression/<lang>_project/` with a section in `tests/regression/run.sh`.
