@@ -75,21 +75,32 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Build release notes
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # This version's CHANGELOG.md section (empty for tags predating the changelog)
+          awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md || true
+          cat >> notes.md <<'EOF'
+
+          ## Installation
+
+          ```sh
+          curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | sh
+          ```
+
+          Or download a binary directly for your platform from the assets below.
+
+          ## Update
+
+          ```sh
+          smartgrep update
+          ```
+          EOF
+          cat notes.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          body: |
-            ## Installation
-
-            ```sh
-            curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | sh
-            ```
-
-            Or download a binary directly for your platform from the assets below.
-
-            ## Update
-
-            ```sh
-            smartgrep update
-            ```
+          body_path: notes.md

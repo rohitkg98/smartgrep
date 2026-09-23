@@ -6,8 +6,9 @@
 #   scripts/release.sh <X.Y.Z> [--dry-run]
 #
 # Steps: preflight checks (on main, clean tree, in sync with origin, new version,
-# tag unused) → cargo test → regression suite → bump Cargo.toml/Cargo.lock →
-# commit "bump version to X.Y.Z" → tag vX.Y.Z → push main + tag → wait for the
+# tag unused, CHANGELOG.md has Unreleased entries) → cargo test → regression
+# suite → bump Cargo.toml/Cargo.lock and turn CHANGELOG "Unreleased" into
+# "X.Y.Z - date" → commit "bump version to X.Y.Z" → tag vX.Y.Z → push main + tag → wait for the
 # Release workflow, verify the binaries were attached, then mark issues closed
 # by commits in this release (`Closes #N`) as Done on the roadmap board.
 #
@@ -39,6 +40,9 @@ git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && die "tag $TAG already e
 CURRENT=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 [[ "$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -V | tail -1)" == "$VERSION" && "$CURRENT" != "$VERSION" ]] \
     || die "version $VERSION must be greater than current $CURRENT"
+# Unreleased section must have at least one entry; it becomes the release notes.
+UNRELEASED=$(awk '/^## \[Unreleased\]/{f=1; next} /^## \[/{f=0} f && /^- /' CHANGELOG.md)
+[[ -n "$UNRELEASED" ]] || die "CHANGELOG.md has no entries under ## [Unreleased]; add them first"
 echo "releasing $CURRENT → $VERSION"
 
 step "Tests"
@@ -57,7 +61,10 @@ step "Bump version"
 perl -0pi -e "s/^version = \"[^\"]*\"/version = \"$VERSION\"/m" Cargo.toml
 grep -q "^version = \"$VERSION\"" Cargo.toml || die "failed to bump Cargo.toml"
 cargo check --quiet  # refreshes Cargo.lock
-git add Cargo.toml Cargo.lock
+# Keep an empty Unreleased section on top, move its entries under the version.
+perl -0pi -e "s/^## \[Unreleased\]\n/## [Unreleased]\n\n## [$VERSION] - $(date +%Y-%m-%d)\n/m" CHANGELOG.md
+grep -q "^## \[$VERSION\]" CHANGELOG.md || die "failed to update CHANGELOG.md"
+git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -q -m "bump version to $VERSION"
 git tag -a "$TAG" -m "smartgrep $VERSION"
 
