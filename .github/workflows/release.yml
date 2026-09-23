@@ -1,12 +1,19 @@
 name: Release
 
+# Tag pushes (v*) build, smoke-test and publish a GitHub release.
+# workflow_dispatch runs the same builds and tests on any branch without publishing.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PROFILE_RELEASE_STRIP: symbols
 
 jobs:
   build:
@@ -15,14 +22,75 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The release target list. scripts/release-assets.sh reads the `- target:` lines
+        # below to derive the expected release assets, so keep one target per entry.
+        #   build: native | cross (cross-rs Docker images) | zig (cargo-zigbuild)
+        #   smoke: native | qemu (binfmt, static binary run directly) | docker (binfmt +
+        #          --platform container, for glibc binaries) | freebsd (vmactions VM)
         include:
+          # macOS
           - target: aarch64-apple-darwin
             os: macos-14
+            build: native
+            smoke: native
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            build: native
+            smoke: native
+          # Linux (static musl unless noted)
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
+            build: native
+            smoke: native
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            cross: true
+            os: ubuntu-24.04-arm
+            build: native
+            smoke: native
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-24.04
+            build: cross
+            smoke: qemu
+          - target: arm-unknown-linux-musleabihf
+            os: ubuntu-24.04
+            build: cross
+            smoke: qemu
+          - target: i686-unknown-linux-musl
+            os: ubuntu-24.04
+            build: cross
+            smoke: native
+          - target: riscv64gc-unknown-linux-musl
+            os: ubuntu-24.04
+            build: cross
+            smoke: qemu
+          - target: powerpc64le-unknown-linux-musl
+            os: ubuntu-24.04
+            build: zig
+            smoke: qemu
+          # No musl: s390x-unknown-linux-musl is tier 3 (no prebuilt std).
+          - target: s390x-unknown-linux-gnu
+            os: ubuntu-24.04
+            build: zig
+            glibc: '2.17'
+            smoke: docker
+            platform: linux/s390x
+          - target: loongarch64-unknown-linux-musl
+            os: ubuntu-24.04
+            build: cross
+            smoke: qemu
+          # FreeBSD
+          - target: x86_64-unknown-freebsd
+            os: ubuntu-24.04
+            build: cross
+            smoke: freebsd
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            build: native
+            smoke: native
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            build: native
+            smoke: native
 
     steps:
       - uses: actions/checkout@v4
@@ -32,40 +100,384 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install musl tools (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
-      - name: Install cross (Linux aarch64)
-        if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Static CRT (Windows)
+        if: contains(matrix.target, 'windows')
+        shell: bash
+        # No dependency on the VC++ redistributable (vcruntime140.dll).
+        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
 
-      - name: Build (native)
-        if: '!matrix.cross'
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Install musl tools
+        if: matrix.build == 'native' && contains(matrix.target, 'linux-musl')
+        run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
 
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }}
+      - name: Install cross
+        if: matrix.build == 'cross'
+        # Git version: the 0.2.5 release has no riscv64/loongarch64 musl images.
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
+
+      - name: Install zig
+        if: matrix.build == 'zig'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
+      - name: Install cargo-zigbuild
+        if: matrix.build == 'zig'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Static linking (musl)
+        # After installing tools: RUSTFLAGS would also break `cargo install cross`.
+        if: contains(matrix.target, 'musl')
+        shell: bash
+        # Newer musl targets (riscv64gc, loongarch64, powerpc64le) link dynamically by default.
+        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
+
+      - name: Build
+        shell: bash
+        run: |
+          case "${{ matrix.build }}" in
+            native) cargo build --release --locked --target ${{ matrix.target }} ;;
+            cross)  cross build --release --locked --target ${{ matrix.target }} ;;
+            # `<target>.<glibc>` links against that glibc version (the oldest it will run on)
+            zig)    cargo zigbuild --release --locked --target ${{ matrix.target }}${{ matrix.glibc && format('.{0}', matrix.glibc) || '' }} ;;
+          esac
 
       - name: Package
         shell: bash
         run: |
-          ASSET="smartgrep-${{ matrix.target }}.tar.gz"
-          cp target/${{ matrix.target }}/release/smartgrep smartgrep
-          tar -czf "$ASSET" smartgrep
-          echo "ASSET=$ASSET" >> $GITHUB_ENV
+          case "${{ matrix.target }}" in
+            *windows*)
+              ASSET="smartgrep-${{ matrix.target }}.zip"
+              cp "target/${{ matrix.target }}/release/smartgrep.exe" smartgrep.exe
+              pwsh -NoProfile -Command "Compress-Archive -Path smartgrep.exe -DestinationPath $ASSET"
+              BIN=./smartgrep.exe
+              ;;
+            *)
+              ASSET="smartgrep-${{ matrix.target }}.tar.gz"
+              cp "target/${{ matrix.target }}/release/smartgrep" smartgrep
+              tar -czf "$ASSET" smartgrep
+              BIN=./smartgrep
+              ;;
+          esac
+          echo "ASSET=$ASSET" >> "$GITHUB_ENV"
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+          ls -l "$ASSET" "$BIN"
+          if command -v file >/dev/null; then
+            file "$BIN"
+            case "${{ matrix.target }}" in
+              *musl*) if file "$BIN" | grep -q "dynamically linked"; then echo "::error::$BIN is not static"; exit 1; fi ;;
+            esac
+          fi
+
+      - name: Set up QEMU
+        if: matrix.smoke == 'qemu' || matrix.smoke == 'docker'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Smoke test (native / QEMU)
+        if: matrix.smoke == 'native' || matrix.smoke == 'qemu'
+        shell: bash
+        # QEMU: binfmt_misc is registered with the fix-binary flag, so the static
+        # binary runs directly on the host.
+        run: sh scripts/smoke.sh "$BIN"
+
+      - name: Smoke test (QEMU container)
+        if: matrix.smoke == 'docker'
+        run: |
+          docker pull -q --platform ${{ matrix.platform }} ubuntu:22.04
+          sh scripts/smoke.sh docker run --rm --platform ${{ matrix.platform }} \
+            -v "$PWD:/w" -w /w ubuntu:22.04 "$BIN"
+
+      - name: Smoke test (FreeBSD VM)
+        if: matrix.smoke == 'freebsd'
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          run: |
+            freebsd-version
+            file ./smartgrep
+            sh scripts/smoke.sh ./smartgrep
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
           path: ${{ env.ASSET }}
+          if-no-files-found: error
+
+  checksums:
+    name: SHA256SUMS
+    needs: build
+    # Also on partial build failure, so the installer tests still run while iterating;
+    # the release job requires every build to succeed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check assets and write SHA256SUMS
+        run: |
+          cd dist
+          sha256sum smartgrep-* > SHA256SUMS
+          cat SHA256SUMS
+          missing=""
+          for a in $(sh ../scripts/release-assets.sh); do
+            [ -f "$a" ] || missing="$missing $a"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::missing release assets:$missing"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: dist/SHA256SUMS
+
+  install-sh:
+    name: install.sh (${{ matrix.os }})
+    needs: checksums
+    if: ${{ !cancelled() && needs.checksums.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            artifact: aarch64-unknown-linux-musl
+          - os: macos-14
+            artifact: aarch64-apple-darwin
+          - os: macos-15-intel
+            artifact: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: '{${{ matrix.artifact }},SHA256SUMS}'
+          merge-multiple: true
+
+      - name: Target detection
+        run: sh scripts/test-install-targets.sh install.sh
+
+      - name: Detects this machine's target
+        run: |
+          got=$(SMARTGREP_PRINT_TARGET=1 sh install.sh)
+          echo "detected: $got"
+          test "$got" = "${{ matrix.artifact }}"
+
+      - name: Install from local archive (checksum verified)
+        run: |
+          SMARTGREP_ARCHIVE="$PWD/dist/smartgrep-${{ matrix.artifact }}.tar.gz" \
+            SMARTGREP_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh | tee out.txt
+          grep -q "Checksum verified" out.txt
+          sh scripts/smoke.sh "$RUNNER_TEMP/bin/smartgrep"
+
+      - name: Default install dir (/usr/local/bin if writable, else ~/.local/bin)
+        run: |
+          if [ -w /usr/local/bin ]; then want=/usr/local/bin; else want="$HOME/.local/bin"; fi
+          SMARTGREP_ARCHIVE="$PWD/dist/smartgrep-${{ matrix.artifact }}.tar.gz" sh install.sh | tee out.txt
+          grep -q "to $want/smartgrep" out.txt
+          "$want/smartgrep" --help >/dev/null
+
+      - name: Reinstall over a running binary
+        run: |
+          # Stand-in for a long-running smartgrep (e.g. the daemon): writing into a
+          # running executable fails with "text file busy"; the installer must replace it.
+          cp "$(command -v sleep)" "$RUNNER_TEMP/bin/smartgrep"
+          "$RUNNER_TEMP/bin/smartgrep" 30 &
+          pid=$!
+          sleep 1
+          SMARTGREP_ARCHIVE="$PWD/dist/smartgrep-${{ matrix.artifact }}.tar.gz" \
+            SMARTGREP_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/smartgrep" --help >/dev/null
+          kill "$pid"
+
+      - name: Rejects a bad checksum
+        run: |
+          mkdir bad
+          cp "dist/smartgrep-${{ matrix.artifact }}.tar.gz" bad/
+          echo "0000000000000000000000000000000000000000000000000000000000000000  smartgrep-${{ matrix.artifact }}.tar.gz" > bad/SHA256SUMS
+          if SMARTGREP_ARCHIVE="$PWD/bad/smartgrep-${{ matrix.artifact }}.tar.gz" \
+              SMARTGREP_INSTALL_DIR="$RUNNER_TEMP/bad-bin" sh install.sh; then
+            echo "install.sh accepted a bad checksum"; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/bad-bin/smartgrep"
+
+      - name: Termux layout (faked uname -o = Android)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p shim termux/usr
+          printf '#!/bin/sh\n[ "$1" = -o ] && { echo Android; exit 0; }\nexec /usr/bin/uname "$@"\n' > shim/uname
+          chmod +x shim/uname
+          PATH="$PWD/shim:$PATH" PREFIX="$PWD/termux/usr" \
+            SMARTGREP_ARCHIVE="$PWD/dist/smartgrep-${{ matrix.artifact }}.tar.gz" sh install.sh
+          "$PWD/termux/usr/bin/smartgrep" --help >/dev/null
+
+      - name: Install a published release (network path)
+        # The latest release may predate SHA256SUMS (install.sh warns and continues)
+        # or this platform (download fails; must point at the cargo fallback).
+        run: |
+          if SMARTGREP_INSTALL_DIR="$RUNNER_TEMP/net-bin" sh install.sh 2>err.txt; then
+            "$RUNNER_TEMP/net-bin/smartgrep" --help >/dev/null
+          else
+            cat err.txt
+            grep -q "cargo install --git https://github.com/rohitkg98/smartgrep" err.txt
+          fi
+
+  install-sh-alpine:
+    name: install.sh (Alpine, busybox sh)
+    needs: checksums
+    if: ${{ !cancelled() && needs.checksums.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: '{x86_64-unknown-linux-musl,SHA256SUMS}'
+          merge-multiple: true
+
+      - name: Install and run under busybox
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w alpine:3.22 sh -euc '
+            ls -l "$(readlink -f /bin/sh)"
+            sh scripts/test-install-targets.sh install.sh
+            SMARTGREP_ARCHIVE=/w/dist/smartgrep-x86_64-unknown-linux-musl.tar.gz sh install.sh | tee /tmp/out.txt
+            grep -q "Checksum verified" /tmp/out.txt
+            test -x /usr/local/bin/smartgrep
+            sh scripts/smoke.sh /usr/local/bin/smartgrep
+            # busybox wget, no curl
+            SMARTGREP_INSTALL_DIR=/tmp/net sh install.sh
+            /tmp/net/smartgrep --help >/dev/null
+          '
+
+  install-ps1:
+    name: install.ps1 (${{ matrix.os }}, ${{ matrix.shell }})
+    needs: checksums
+    if: ${{ !cancelled() && needs.checksums.result == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+        shell: [powershell, pwsh]
+        include:
+          - os: windows-latest
+            artifact: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            artifact: aarch64-pc-windows-msvc
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: '{${{ matrix.artifact }},SHA256SUMS}'
+          merge-multiple: true
+
+      - name: Install via irm | iex (default location, PATH, checksum)
+        run: |
+          $PSVersionTable.PSVersion
+          $env:SMARTGREP_ARCHIVE = "$PWD\dist\smartgrep-${{ matrix.artifact }}.zip"
+          $out = Get-Content -Raw .\install.ps1 | Invoke-Expression 6>&1 | Out-String
+          $out
+          if ($out -notmatch '\(${{ matrix.artifact }}\)') { throw "wrong target detected" }
+          if ($out -notmatch 'Checksum verified') { throw "checksum was not verified" }
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\smartgrep'
+          $exe = Join-Path $dir 'smartgrep.exe'
+          if (-not (Test-Path $exe)) { throw "not installed at $exe" }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($userPath -split ';') -notcontains $dir) { throw "user PATH not updated: $userPath" }
+          # installed into the current session's PATH too
+          (Get-Command smartgrep).Source
+          $help = smartgrep --help   # not `| Select-Object -First 1`: pwsh would stop the process early and report failure
+          if ($LASTEXITCODE -ne 0) { throw "smartgrep --help failed" }
+
+      - name: Smoke test installed binary
+        shell: bash
+        run: sh scripts/smoke.sh "$LOCALAPPDATA/Programs/smartgrep/smartgrep.exe"
+
+      - name: Upgrade while smartgrep.exe is running
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\smartgrep'
+          $exe = Join-Path $dir 'smartgrep.exe'
+          # Stand-in for a long-running smartgrep: a running exe at the install path is
+          # locked against overwrite/delete exactly like a smartgrep daemon would be.
+          Copy-Item "$env:SystemRoot\System32\PING.EXE" $exe -Force
+          $p = Start-Process -FilePath $exe -ArgumentList '-n','60','127.0.0.1' -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+          if ($p.HasExited) { throw "stand-in process did not start" }
+          $locked = $false
+          try { Remove-Item $exe -Force -ErrorAction Stop } catch { $locked = $true }
+          if (-not $locked) { throw "expected the running exe to be locked" }
+          $env:SMARTGREP_ARCHIVE = "$PWD\dist\smartgrep-${{ matrix.artifact }}.zip"
+          & .\install.ps1
+          $help = & $exe --help
+          if ($LASTEXITCODE -ne 0) { throw "new smartgrep.exe does not run" }
+          Get-ChildItem $dir | Format-Table Name, Length
+          Stop-Process -Id $p.Id -Force
+          Start-Sleep -Seconds 1
+          # The next install cleans up the leftover .old
+          & .\install.ps1
+          if (Get-ChildItem $dir -Filter '*.old') { throw ".old not cleaned up" }
+          $entries = ([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') | Where-Object { $_ -ieq $dir }
+          if (@($entries).Count -ne 1) { throw "PATH entry duplicated" }
+
+      - name: Rejects a bad checksum (non-zero exit, as smartgrep update runs it)
+        run: |
+          $ErrorActionPreference = 'Continue'
+          New-Item -ItemType Directory bad | Out-Null
+          Copy-Item "dist\smartgrep-${{ matrix.artifact }}.zip" bad\
+          Set-Content bad\SHA256SUMS ("0" * 64 + "  smartgrep-${{ matrix.artifact }}.zip")
+          $env:SMARTGREP_ARCHIVE = "$PWD\bad\smartgrep-${{ matrix.artifact }}.zip"
+          $env:SMARTGREP_INSTALL_DIR = "$env:RUNNER_TEMP\bad-bin"
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -Raw .\install.ps1 | iex"
+          if ($LASTEXITCODE -eq 0) { throw "install.ps1 accepted a bad checksum" }
+          if (Test-Path "$env:RUNNER_TEMP\bad-bin\smartgrep.exe") { throw "installed despite bad checksum" }
+          $global:LASTEXITCODE = 0
+
+      - name: Install a published release (network path)
+        # Releases up to v0.4.0 have no Windows assets; that must fail with the cargo fallback hint.
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $env:SMARTGREP_INSTALL_DIR = "$env:RUNNER_TEMP\net-bin"
+          $env:SMARTGREP_NO_PATH = '1'
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/install.ps1 | iex" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          $out
+          if ($code -eq 0) {
+            $help = & "$env:RUNNER_TEMP\net-bin\smartgrep.exe" --help
+            if ($LASTEXITCODE -ne 0) { throw "installed release does not run" }
+          } elseif (($out -replace '\s+', '') -notmatch 'cargoinstall--git') {
+            throw "download failure did not mention the cargo fallback"
+          }
+          $global:LASTEXITCODE = 0
 
   release:
     name: Create release
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [build, checksums, install-sh, install-sh-alpine, install-ps1]
+    # Tag pushes only; implicit success(): every build and installer test must pass.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +486,14 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Check release assets
+        run: |
+          for a in $(sh scripts/release-assets.sh); do
+            test -f "artifacts/$a" || { echo "missing $a"; exit 1; }
+          done
+          ls -l artifacts
+          cd artifacts && sha256sum -c SHA256SUMS
 
       - name: Build release notes
         shell: bash
@@ -85,11 +505,23 @@ jobs:
 
           ## Installation
 
+          macOS, Linux, FreeBSD, Android (Termux):
+
           ```sh
           curl -fsSL https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.sh | sh
           ```
 
-          Or download a binary directly for your platform from the assets below.
+          Windows (PowerShell):
+
+          ```powershell
+          irm https://raw.githubusercontent.com/rohitkg98/smartgrep/main/install.ps1 | iex
+          ```
+
+          Or download the archive for your platform from the assets below and check it against `SHA256SUMS`. No binary for your platform? Build from source (Rust 1.70+):
+
+          ```sh
+          cargo install --git https://github.com/rohitkg98/smartgrep
+          ```
 
           ## Update
 
