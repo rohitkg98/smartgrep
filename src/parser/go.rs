@@ -1,9 +1,11 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
+use crate::parser::common::{call_target, push_call_deps};
 
 /// Parse a Go source file and return the IR.
 pub fn parse_file(path: &Path, source: &str) -> Result<Ir> {
@@ -19,8 +21,9 @@ pub fn parse_file(path: &Path, source: &str) -> Result<Ir> {
 
     // First pass: extract the package name for qualified name prefix
     let prefix = extract_package(tree.root_node(), source).unwrap_or_default();
+    let packages = import_package_names(tree.root_node(), source);
 
-    extract_items(tree.root_node(), source, path, &prefix, &mut ir);
+    extract_items(tree.root_node(), source, path, &prefix, &packages, &mut ir);
 
     Ok(ir)
 }
@@ -91,7 +94,14 @@ fn extract_package(root: Node, source: &str) -> Option<String> {
 // Top-level item extraction
 // ---------------------------------------------------------------------------
 
-fn extract_items(node: Node, source: &str, path: &Path, prefix: &str, ir: &mut Ir) {
+fn extract_items(
+    node: Node,
+    source: &str,
+    path: &Path,
+    prefix: &str,
+    packages: &HashSet<String>,
+    ir: &mut Ir,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -103,11 +113,13 @@ fn extract_items(node: Node, source: &str, path: &Path, prefix: &str, ir: &mut I
             }
             "function_declaration" => {
                 if let Some(sym) = extract_function(&child, source, path, prefix) {
+                    extract_calls(&child, source, path, &sym.qualified_name, packages, ir);
                     ir.symbols.push(sym);
                 }
             }
             "method_declaration" => {
                 if let Some(sym) = extract_method(&child, source, path, prefix) {
+                    extract_calls(&child, source, path, &sym.qualified_name, packages, ir);
                     ir.symbols.push(sym);
                 }
             }
@@ -164,6 +176,130 @@ fn extract_import_spec(node: &Node, source: &str, path: &Path, prefix: &str) -> 
         });
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Calls
+// ---------------------------------------------------------------------------
+
+/// Names under which this file's imports are visible: the explicit alias, or
+/// the package name guessed from the path (`github.com/x/yaml.v3` → `yaml`,
+/// `example.com/mod/v2` → `mod`, `go-redis` → also `redis`).
+fn import_package_names(root: Node, source: &str) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node.kind() {
+            "source_file" | "import_declaration" | "import_spec_list" => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    stack.push(child);
+                }
+            }
+            "import_spec" => {
+                if let Some(alias) = node.child_by_field_name("name") {
+                    let alias = node_text(&alias, source);
+                    if alias != "_" && alias != "." {
+                        names.insert(alias.to_string());
+                    }
+                    continue;
+                }
+                let Some(path_node) = node.child_by_field_name("path") else {
+                    continue;
+                };
+                let import_path = node_text(&path_node, source).trim_matches('"');
+                let mut segs: Vec<&str> = import_path.split('/').collect();
+                if segs.len() > 1
+                    && segs.last().map_or(false, |s| {
+                        s.len() > 1 && s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit())
+                    })
+                {
+                    segs.pop();
+                }
+                if let Some(last) = segs.last() {
+                    let base = last.split('.').next().unwrap_or(last);
+                    names.insert(base.to_string());
+                    names.insert(base.replace('-', "_"));
+                    if let Some(rest) = base.strip_prefix("go-") {
+                        names.insert(rest.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
+/// Builtin functions and predeclared types (conversions look like calls).
+const GO_SKIP_CALLEES: &[&str] = &[
+    "append", "cap", "clear", "close", "complex", "copy", "delete", "imag", "len", "make",
+    "max", "min", "new", "panic", "print", "println", "real", "recover", "bool", "byte",
+    "rune", "string", "error", "any", "int", "int8", "int16", "int32", "int64", "uint",
+    "uint8", "uint16", "uint32", "uint64", "uintptr", "float32", "float64", "complex64",
+    "complex128",
+];
+
+/// Emit `Call` deps for every call in a func/method body (including calls in
+/// func literals, which are attributed to the enclosing function).
+fn extract_calls(
+    func: &Node,
+    source: &str,
+    path: &Path,
+    from_qualified: &str,
+    packages: &HashSet<String>,
+    ir: &mut Ir,
+) {
+    let Some(body) = func.child_by_field_name("body") else {
+        return;
+    };
+    let mut calls = Vec::new();
+    let mut stack = vec![body];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "call_expression" {
+            if let Some(callee) = node.child_by_field_name("function") {
+                if let Some((name, name_node)) = go_callee(&callee, source, packages) {
+                    calls.push((name, loc(&name_node, path)));
+                }
+            }
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    push_call_deps(ir, from_qualified, calls);
+}
+
+/// `Foo()` → `Foo`; `fmt.Println()` → `fmt.Println` when `fmt` is an imported
+/// package; `s.users.Get()` / `recv.Method()` → `Get` / `Method`.
+fn go_callee<'a>(
+    callee: &Node<'a>,
+    source: &str,
+    packages: &HashSet<String>,
+) -> Option<(String, Node<'a>)> {
+    match callee.kind() {
+        "identifier" => {
+            let name = call_target(node_text(callee, source))?;
+            if GO_SKIP_CALLEES.contains(&name.as_str()) {
+                return None;
+            }
+            Some((name, *callee))
+        }
+        "selector_expression" => {
+            let field = callee.child_by_field_name("field")?;
+            let operand = callee.child_by_field_name("operand")?;
+            if operand.kind() == "identifier" && packages.contains(node_text(&operand, source)) {
+                return Some((call_target(node_text(callee, source))?, *callee));
+            }
+            Some((call_target(node_text(&field, source))?, field))
+        }
+        "parenthesized_expression" => {
+            let inner = callee.named_child(0)?;
+            go_callee(&inner, source, packages)
+        }
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------

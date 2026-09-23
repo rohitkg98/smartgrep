@@ -281,6 +281,12 @@ fn outgoing_dirs(
         if !rel_files.contains(dep_rel) {
             continue;
         }
+        // Map shows module-level coupling (imports / implements). Call targets
+        // are unresolved names (`new`, `push`), so a by-name lookup would
+        // invent edges to whichever directory happens to define that name.
+        if dep.kind == crate::ir::types::DepKind::Call {
+            continue;
+        }
         // Try module-path resolution first (works for import deps like `crate::ir::types`)
         let target_dir: PathBuf = if let Some(d) = resolve_import_dir(&dep.to_name, module_dir_map) {
             // d is already a relative directory — just apply depth

@@ -140,3 +140,135 @@ fn private_function_visibility() {
     let helper = ir.symbols.iter().find(|s| s.name == "private_helper").unwrap();
     assert_eq!(helper.visibility, Visibility::Private);
 }
+
+// ---------------------------------------------------------------------------
+// Call deps + grouped imports (tests/fixtures/calls.rs)
+// ---------------------------------------------------------------------------
+
+fn parse_calls_fixture() -> Ir {
+    let source = include_str!("fixtures/calls.rs");
+    parse_file(Path::new("src/calls.rs"), source).unwrap()
+}
+
+fn calls_from<'a>(ir: &'a Ir, from: &str) -> Vec<&'a str> {
+    ir.dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == from)
+        .map(|d| d.to_name.as_str())
+        .collect()
+}
+
+#[test]
+fn fixture_method_calls_in_source_order_deduped() {
+    let ir = parse_calls_fixture();
+    let calls = calls_from(&ir, "crate::calls::Registry::build");
+    assert_eq!(
+        calls,
+        vec![
+            "HashMap::new", // static path kept as written
+            "push",         // `self.items.push()` → method name only, deduped
+            "iter",
+            "map",
+            "transform", // inside a closure → attributed to `build`
+            "collect",   // turbofish stripped
+            "parse",
+            "deep_call", // inside a nested fn → attributed to `build`
+            "crate::store::load",
+        ]
+    );
+    // first occurrence's location wins
+    let push = ir
+        .dependencies
+        .iter()
+        .find(|d| d.to_name == "push")
+        .unwrap();
+    assert_eq!(push.loc.line, 28);
+}
+
+#[test]
+fn fixture_skips_macros_struct_literals_and_variant_ctors() {
+    let ir = parse_calls_fixture();
+    let all: Vec<&str> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call)
+        .map(|d| d.to_name.as_str())
+        .collect();
+    for skipped in ["println", "println!", "ignored_in_macro", "write", "Registry", "Some"] {
+        assert!(!all.contains(&skipped), "{} should not be a call dep", skipped);
+    }
+    // `Registry { items: Vec::new() }`: the literal is skipped, calls inside it are not
+    assert_eq!(calls_from(&ir, "crate::calls::Registry::new"), vec!["Vec::new"]);
+}
+
+#[test]
+fn fixture_free_fn_and_trait_default_method_calls() {
+    let ir = parse_calls_fixture();
+    assert_eq!(
+        calls_from(&ir, "crate::calls::helper"),
+        vec!["Registry::new", "to_uppercase"]
+    );
+    // trait default methods are emitted as methods, and their calls recorded
+    let describe = ir
+        .symbols
+        .iter()
+        .find(|s| s.name == "describe")
+        .expect("trait default method should be a symbol");
+    assert_eq!(describe.kind, "method");
+    assert_eq!(describe.parent.as_deref(), Some("Describe"));
+    assert_eq!(
+        calls_from(&ir, "crate::calls::Describe::describe"),
+        vec!["label", "helper"]
+    );
+    // required trait methods (no body) are not symbols
+    assert!(!ir.symbols.iter().any(|s| s.name == "label"));
+}
+
+#[test]
+fn fixture_grouped_imports_are_split_per_leaf() {
+    let ir = parse_calls_fixture();
+    let imports: Vec<&str> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Import)
+        .map(|d| d.to_name.as_str())
+        .collect();
+    assert_eq!(
+        imports,
+        vec![
+            "std::collections::HashMap",
+            "std::collections::hash_map::Entry",
+            "std::fmt",
+            "std::fmt::Display",
+            "crate::store::load",
+            "crate::ir::types::*",
+        ]
+    );
+}
+
+#[test]
+fn fixture_implements_recorded_for_trait_impl() {
+    let ir = parse_calls_fixture();
+    let imp: Vec<_> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Implements)
+        .collect();
+    assert_eq!(imp.len(), 1);
+    assert_eq!(imp[0].from_qualified, "crate::calls::Registry");
+    assert_eq!(imp[0].to_name, "Display");
+}
+
+#[test]
+fn sample_fixture_method_call_dep() {
+    let ir = parse_fixture();
+    let calls: Vec<_> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call)
+        .collect();
+    // `self.values.push(v)` in add_value; `format!` is a macro and skipped
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].to_name, "push");
+    assert!(calls[0].from_qualified.ends_with("Config::add_value"));
+}

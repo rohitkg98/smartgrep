@@ -368,3 +368,73 @@ fn fixture_type_alias_has_return_type() {
         .unwrap();
     assert_eq!(status_code.return_type.as_deref(), Some("int"));
 }
+
+// ---------------------------------------------------------------------------
+// Call deps (tests/fixtures/calls.go)
+// ---------------------------------------------------------------------------
+
+fn parse_calls_fixture() -> Ir {
+    let source = include_str!("fixtures/calls.go");
+    parse_file(Path::new("calls.go"), source).unwrap()
+}
+
+fn calls_from<'a>(ir: &'a Ir, from: &str) -> Vec<&'a str> {
+    ir.dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call && d.from_qualified == from)
+        .map(|d| d.to_name.as_str())
+        .collect()
+}
+
+#[test]
+fn calls_method_body_in_source_order_deduped() {
+    let ir = parse_calls_fixture();
+    assert_eq!(
+        calls_from(&ir, "calls.Store.Add"),
+        vec![
+            "str.ToUpper",  // aliased import keeps the package qualifier
+            "Flush",        // `s.inner.Flush()` → method name only
+            "fmt.Println",  // package call kept, deduped
+            "helper",
+            "background",   // inside a func literal → attributed to Add
+            "app.Version",  // `.../app/v2` package name is `app`
+            "yaml.Marshal",
+        ]
+    );
+    let println = ir
+        .dependencies
+        .iter()
+        .find(|d| d.to_name == "fmt.Println")
+        .unwrap();
+    assert_eq!(println.loc.line, 26);
+}
+
+#[test]
+fn calls_skip_builtins_and_conversions() {
+    let ir = parse_calls_fixture();
+    let all: Vec<&str> = ir
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Call)
+        .map(|d| d.to_name.as_str())
+        .collect();
+    for skipped in ["make", "append", "len", "int64"] {
+        assert!(!all.contains(&skipped), "{} should not be a call dep", skipped);
+    }
+}
+
+#[test]
+fn calls_from_top_level_funcs() {
+    let ir = parse_calls_fixture();
+    assert_eq!(calls_from(&ir, "calls.NewStore"), vec!["Add"]);
+    assert_eq!(calls_from(&ir, "calls.helper"), vec!["fmt.Sprintf"]);
+    assert!(calls_from(&ir, "calls.background").is_empty());
+}
+
+#[test]
+fn sample_fixture_calls() {
+    let ir = parse_fixture();
+    assert_eq!(calls_from(&ir, "sample.helper"), vec!["fmt.Sprintf"]);
+    // `append` is a builtin
+    assert!(calls_from(&ir, "sample.Config.addValue").is_empty());
+}

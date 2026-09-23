@@ -3,11 +3,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::ir::names::{dep_matches, dep_target_key, strip_generics};
+use crate::ir::names::path_segments;
 use crate::ir::types::{Dependency, Symbol};
 
 /// Bump when the index schema or the set of indexed languages changes, so
-/// existing on-disk indexes are rebuilt (e.g. v3: Python files are now indexed).
-pub const INDEX_VERSION: u32 = 3;
+/// existing on-disk indexes are rebuilt (e.g. v3: Python files are now indexed;
+/// v4: call deps, per-leaf grouped imports, `reverse_deps` keyed by
+/// [`dep_target_key`]).
+pub const INDEX_VERSION: u32 = 4;
 
 /// The queryable index: symbols + dependencies + lookup tables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +26,7 @@ pub struct Index {
     pub file_lookup: HashMap<PathBuf, Vec<usize>>,
     /// qualified_name → symbol index
     pub qualified_lookup: HashMap<String, usize>,
-    /// qualified_name → dep indices where dep.to_name matches
+    /// [`dep_target_key`] of `dep.to_name` → dep indices
     pub reverse_deps: HashMap<String, Vec<usize>>,
 }
 
@@ -81,11 +85,30 @@ impl Index {
             .collect()
     }
 
-    /// Get incoming references to a name (dependencies where to_name matches).
+    /// Get incoming references to a name.
+    ///
+    /// Deps are matched on their normalized target (see [`dep_target_key`]):
+    /// - a bare name (`Index`, `ensure_index`) matches every dep whose last
+    ///   path segment is that name (`crate::index::types::Index`, `Index`,
+    ///   `auto::ensure_index`, `Processor<String>`, ...);
+    /// - a qualified name (`Symbol::new`, `fmt.Println`) additionally requires
+    ///   the dep's path to end with the query's segments, treating `::`, `.`
+    ///   and `/` as the same separator (see [`dep_matches`]).
     pub fn refs_to(&self, name: &str) -> Vec<&Dependency> {
+        let key = dep_target_key(name);
+        if key.is_empty() {
+            return Vec::new();
+        }
+        let qualified = path_segments(&strip_generics(name.trim())).len() > 1;
         self.reverse_deps
-            .get(name)
-            .map(|indices| indices.iter().map(|&i| &self.deps[i]).collect())
+            .get(&key)
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|&i| &self.deps[i])
+                    .filter(|d| !qualified || dep_matches(&d.to_name, name))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }

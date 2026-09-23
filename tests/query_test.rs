@@ -842,3 +842,33 @@ fn ls_kind_filter_vocabulary_for_python() {
         assert!(umbrella.contains(&k.to_string()), "functions should include {}", k);
     }
 }
+
+#[test]
+fn query_implementing_matches_qualified_and_generic_targets() {
+    let symbols = vec![
+        py_sym("User", "crate::m::User", "struct", "src/m.rs", None),
+        py_sym("Svc", "crate::m::Svc", "struct", "src/m.rs", None),
+        py_sym("Job", "com.x.Job", "class", "src/Job.java", None),
+    ];
+    let imp = |from: &str, to: &str| Dependency {
+        from_qualified: from.to_string(),
+        to_name: to.to_string(),
+        kind: DepKind::Implements,
+        loc: SourceLoc { file: PathBuf::from("src/m.rs"), line: 1, col: 1 },
+    };
+    let dependencies = vec![
+        imp("crate::m::User", "std::fmt::Display"),
+        imp("crate::m::Svc", "fmt::Display"),
+        imp("crate::m::Svc", "Repository<User>"),
+        imp("com.x.Job", "Processor<String>"),
+    ];
+    let index = builder::build(&Ir { symbols, dependencies });
+    let run = |q: &str| {
+        let batch = parser::parse(q).unwrap();
+        names(&engine::execute_query(&batch.queries[0], &index).unwrap())
+    };
+    assert_eq!(run("structs implementing Display"), vec!["Svc", "User"]);
+    assert_eq!(run("structs implementing std::fmt::Display"), vec!["User"]);
+    assert_eq!(run("structs implementing Repository"), vec!["Svc"]);
+    assert_eq!(run("classes implementing Processor"), vec!["Job"]);
+}

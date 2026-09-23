@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::ir::types::Ir;
+use crate::ir::names::{dep_qualifier_key, dep_target_key};
+use crate::ir::types::{DepKind, Ir};
 
 use super::types::Index;
 
@@ -31,10 +32,20 @@ pub fn build(ir: &Ir) -> Index {
 
     let mut reverse_deps: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, dep) in deps.iter().enumerate() {
-        reverse_deps
-            .entry(dep.to_name.clone())
-            .or_default()
-            .push(i);
+        let key = dep_target_key(&dep.to_name);
+        if key.is_empty() {
+            continue;
+        }
+        // Calls through a path (`User::new`, `fmt.Println`) are also refs to
+        // their owner, so `refs User` lists constructor/associated-fn calls.
+        if dep.kind == DepKind::Call {
+            if let Some(owner) = dep_qualifier_key(&dep.to_name) {
+                if owner != key {
+                    reverse_deps.entry(owner).or_default().push(i);
+                }
+            }
+        }
+        reverse_deps.entry(key).or_default().push(i);
     }
 
     Index {

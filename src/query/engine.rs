@@ -108,8 +108,11 @@ fn resolve_source(source: &Source, index: &Index) -> Result<Vec<Row>> {
                          methods where name = <MethodName> | show parent, file"
                     ));
                 }
-                let implementors: HashSet<&str> = index.deps.iter()
-                    .filter(|d| d.kind == DepKind::Implements && d.to_name == trait_name.as_str())
+                // Same matching as `refs`: `Display` matches `std::fmt::Display`
+                // and `fmt::Display`; `Processor` matches `Processor<String>`.
+                let implementors: HashSet<&str> = index.refs_to(trait_name)
+                    .into_iter()
+                    .filter(|d| d.kind == DepKind::Implements)
                     .map(|d| d.from_qualified.as_str())
                     .collect();
                 symbols.into_iter().filter(|s| implementors.contains(s.qualified_name.as_str())).collect()

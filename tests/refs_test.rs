@@ -96,8 +96,9 @@ fn build_refs_test_index() -> smartgrep::index::types::Index {
 fn refs_to_returns_all_references() {
     let index = build_refs_test_index();
     let refs = index.refs_to("Config");
-    assert_eq!(refs.len(), 2, "Config should have 2 type references");
-    assert!(refs.iter().all(|d| d.to_name == "Config"));
+    // 2 type refs + the `crate::alpha::Config` import (matched on last segment)
+    assert_eq!(refs.len(), 3, "Config should have 2 type refs and 1 import");
+    assert!(refs.iter().all(|d| d.to_name.ends_with("Config")));
 }
 
 #[test]
@@ -138,7 +139,9 @@ fn refs_to_nonexistent_returns_empty() {
 fn refs_to_dep_kinds_are_correct() {
     let index = build_refs_test_index();
     let refs = index.refs_to("Config");
-    assert!(refs.iter().all(|d| d.kind == DepKind::TypeRef));
+    let type_refs = refs.iter().filter(|d| d.kind == DepKind::TypeRef).count();
+    let imports = refs.iter().filter(|d| d.kind == DepKind::Import).count();
+    assert_eq!((type_refs, imports), (2, 1));
 }
 
 #[test]
@@ -148,4 +151,72 @@ fn refs_to_locations_are_correct() {
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].loc.file, PathBuf::from("src/gamma.rs"));
     assert_eq!(refs[0].loc.line, 5);
+}
+
+// ---------------------------------------------------------------------------
+// Normalized matching (bare / qualified / generic / owner)
+// ---------------------------------------------------------------------------
+
+fn dep(from: &str, to: &str, kind: DepKind, line: usize) -> Dependency {
+    Dependency {
+        from_qualified: from.to_string(),
+        to_name: to.to_string(),
+        kind,
+        loc: SourceLoc { file: PathBuf::from("src/x.rs"), line, col: 1 },
+    }
+}
+
+fn matching_index() -> smartgrep::index::types::Index {
+    builder::build(&Ir {
+        symbols: vec![],
+        dependencies: vec![
+            dep("crate::a", "crate::ir::types::Symbol", DepKind::Import, 1),
+            dep("crate::a::f", "Symbol::new", DepKind::Call, 2),
+            dep("crate::a::g", "crate::ir::types::Symbol::new", DepKind::Call, 3),
+            dep("crate::a::h", "new", DepKind::Call, 4),
+            dep("crate::a::Foo", "Processor<String>", DepKind::Implements, 5),
+            dep("crate::a::Bar", "std::fmt::Display", DepKind::Implements, 6),
+            dep("main.run", "fmt.Println", DepKind::Call, 7),
+            dep("main", "github.com/acme/app/models", DepKind::Import, 8),
+            dep("crate::a::k", "x.items.collect::<Vec<_>>", DepKind::Call, 9),
+        ],
+    })
+}
+
+fn lines(refs: &[&Dependency]) -> Vec<usize> {
+    let mut v: Vec<usize> = refs.iter().map(|d| d.loc.line).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn refs_bare_name_matches_last_segment_of_paths() {
+    let index = matching_index();
+    // import + `Symbol::new` / `...::Symbol::new` calls (owner key)
+    assert_eq!(lines(&index.refs_to("Symbol")), vec![1, 2, 3]);
+    assert_eq!(lines(&index.refs_to("new")), vec![2, 3, 4]);
+    assert_eq!(lines(&index.refs_to("Println")), vec![7]);
+    assert_eq!(lines(&index.refs_to("models")), vec![8]);
+}
+
+#[test]
+fn refs_qualified_name_requires_path_suffix() {
+    let index = matching_index();
+    assert_eq!(lines(&index.refs_to("Symbol::new")), vec![2, 3]);
+    assert_eq!(lines(&index.refs_to("types::Symbol::new")), vec![3]);
+    assert_eq!(lines(&index.refs_to("ir::types::Symbol")), vec![1]);
+    // `.` and `::` are interchangeable separators
+    assert_eq!(lines(&index.refs_to("fmt::Println")), vec![7]);
+    assert_eq!(lines(&index.refs_to("fmt.Println")), vec![7]);
+    assert!(index.refs_to("Other::new").is_empty());
+}
+
+#[test]
+fn refs_ignore_generics() {
+    let index = matching_index();
+    assert_eq!(lines(&index.refs_to("Processor")), vec![5]);
+    assert_eq!(lines(&index.refs_to("Processor<T>")), vec![5]);
+    assert_eq!(lines(&index.refs_to("collect")), vec![9]);
+    assert_eq!(lines(&index.refs_to("Display")), vec![6]);
+    assert_eq!(lines(&index.refs_to("fmt::Display")), vec![6]);
 }

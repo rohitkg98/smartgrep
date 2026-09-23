@@ -4,7 +4,7 @@ use anyhow::Result;
 use tree_sitter::{Node, Parser};
 
 use crate::ir::types::*;
-use crate::parser::common::{loc, node_text};
+use crate::parser::common::{call_target, loc, node_text, push_call_deps};
 
 /// Derive a qualified module prefix from a file path.
 /// `src/index/builder.rs` -> `crate::index::builder`
@@ -70,6 +70,7 @@ fn extract_items(
             "function_item" => {
                 if let Some(mut sym) = extract_function(&child, source, path, prefix, parent) {
                     sym.attributes = std::mem::take(&mut pending_attrs);
+                    extract_calls(&child, source, path, &sym.qualified_name, ir);
                     ir.symbols.push(sym);
                 } else {
                     pending_attrs.clear();
@@ -94,7 +95,9 @@ fn extract_items(
             "trait_item" => {
                 if let Some(mut sym) = extract_trait(&child, source, path, prefix) {
                     sym.attributes = std::mem::take(&mut pending_attrs);
+                    let trait_name = sym.name.clone();
                     ir.symbols.push(sym);
+                    extract_trait_default_methods(&child, source, path, prefix, &trait_name, ir);
                 } else {
                     pending_attrs.clear();
                 }
@@ -105,9 +108,7 @@ fn extract_items(
             }
             "use_declaration" => {
                 pending_attrs.clear();
-                if let Some(dep) = extract_use(&child, source, path, prefix) {
-                    ir.dependencies.push(dep);
-                }
+                extract_use(&child, source, path, prefix, ir);
             }
             "const_item" => {
                 if let Some(mut sym) = extract_const(&child, source, path, prefix) {
@@ -138,7 +139,7 @@ fn extract_items(
     }
 }
 
-fn find_child_by_field<'a>(node: &'a Node<'a>, field: &str) -> Option<Node<'a>> {
+fn find_child_by_field<'a>(node: &Node<'a>, field: &str) -> Option<Node<'a>> {
     node.child_by_field_name(field)
 }
 
@@ -341,6 +342,7 @@ fn extract_impl(
                         extract_function(&child, source, path, prefix, Some(&type_name))
                     {
                         sym.attributes = std::mem::take(&mut pending_attrs);
+                        extract_calls(&child, source, path, &sym.qualified_name, ir);
                         ir.symbols.push(sym);
                     } else {
                         pending_attrs.clear();
@@ -368,21 +370,162 @@ fn extract_impl(
     }
 }
 
-fn extract_use(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Dependency> {
-    let text = node_text(node, source).to_string();
-    let import_path = text
-        .strip_prefix("use ")
-        .unwrap_or(&text)
-        .trim_end_matches(';')
-        .trim()
-        .to_string();
+/// Emit one Import dep per imported leaf, with its full path:
+/// `use a::{B, c::D};` → `a::B`, `a::c::D`; `use x::y as z;` → `x::y`;
+/// `use std::fmt::{self, Display};` → `std::fmt`, `std::fmt::Display`.
+fn extract_use(node: &Node, source: &str, path: &Path, prefix: &str, ir: &mut Ir) {
+    let Some(arg) = find_child_by_field(node, "argument") else {
+        return;
+    };
+    let mut leaves = Vec::new();
+    collect_use_leaves(&arg, source, "", &mut leaves);
+    for (import_path, leaf) in leaves {
+        ir.dependencies.push(Dependency {
+            from_qualified: prefix.to_string(),
+            to_name: import_path,
+            kind: DepKind::Import,
+            loc: loc(&leaf, path),
+        });
+    }
+}
 
-    Some(Dependency {
-        from_qualified: prefix.to_string(),
-        to_name: import_path,
-        kind: DepKind::Import,
-        loc: loc(node, path),
-    })
+fn join_use_path(base: &str, rest: &str) -> String {
+    let rest = rest.trim();
+    match (base.is_empty(), rest.is_empty()) {
+        (true, _) => rest.to_string(),
+        (false, true) => base.to_string(),
+        (false, false) => format!("{}::{}", base, rest),
+    }
+}
+
+fn collect_use_leaves<'a>(
+    node: &Node<'a>,
+    source: &str,
+    base: &str,
+    out: &mut Vec<(String, Node<'a>)>,
+) {
+    match node.kind() {
+        "scoped_use_list" => {
+            let new_base = match find_child_by_field(node, "path") {
+                Some(p) => join_use_path(base, node_text(&p, source)),
+                None => base.to_string(),
+            };
+            if let Some(list) = find_child_by_field(node, "list") {
+                collect_use_leaves(&list, source, &new_base, out);
+            }
+        }
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if child.kind() == "line_comment" || child.kind() == "block_comment" {
+                    continue;
+                }
+                collect_use_leaves(&child, source, base, out);
+            }
+        }
+        "use_as_clause" => {
+            if let Some(p) = find_child_by_field(node, "path") {
+                collect_use_leaves(&p, source, base, out);
+            }
+        }
+        // `{self, ...}` imports the list's base module itself.
+        "self" if !base.is_empty() => out.push((base.to_string(), *node)),
+        _ => {
+            let text: String = node_text(node, source)
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            out.push((join_use_path(base, &text), *node));
+        }
+    }
+}
+
+/// Emit methods for trait items that have a default body, so their calls are
+/// attributed (`crate::m::Trait::method`). Required methods (no body) are not
+/// emitted as symbols.
+fn extract_trait_default_methods(
+    node: &Node,
+    source: &str,
+    path: &Path,
+    prefix: &str,
+    trait_name: &str,
+    ir: &mut Ir,
+) {
+    let Some(body) = find_child_by_field(node, "body") else {
+        return;
+    };
+    let mut pending_attrs: Vec<String> = Vec::new();
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        match child.kind() {
+            "attribute_item" => pending_attrs.push(node_text(&child, source).to_string()),
+            "function_item" => {
+                if let Some(mut sym) =
+                    extract_function(&child, source, path, prefix, Some(trait_name))
+                {
+                    sym.attributes = std::mem::take(&mut pending_attrs);
+                    extract_calls(&child, source, path, &sym.qualified_name, ir);
+                    ir.symbols.push(sym);
+                } else {
+                    pending_attrs.clear();
+                }
+            }
+            _ => pending_attrs.clear(),
+        }
+    }
+}
+
+/// Emit `Call` deps for every call expression in a function's body. Calls in
+/// closures and nested fns are attributed to this function. Macros are not
+/// calls (and their token trees are not parsed), struct literals are skipped.
+fn extract_calls(func: &Node, source: &str, path: &Path, from_qualified: &str, ir: &mut Ir) {
+    let Some(body) = find_child_by_field(func, "body") else {
+        return;
+    };
+    let mut calls = Vec::new();
+    let mut stack = vec![body];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "call_expression" {
+            if let Some(callee) = find_child_by_field(&node, "function") {
+                if let Some((name, name_node)) = rust_callee(&callee, source) {
+                    calls.push((name, loc(&name_node, path)));
+                }
+            }
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    push_call_deps(ir, from_qualified, calls);
+}
+
+/// Prelude enum-variant constructors: syntactically calls, semantically noise.
+const RUST_SKIP_CALLEES: &[&str] = &["Some", "Ok", "Err"];
+
+/// Resolve a call's `function` node to the recorded callee name and the node
+/// to use for its location.
+fn rust_callee<'a>(callee: &Node<'a>, source: &str) -> Option<(String, Node<'a>)> {
+    match callee.kind() {
+        "identifier" | "scoped_identifier" => {
+            let name = call_target(node_text(callee, source))?;
+            if RUST_SKIP_CALLEES.contains(&name.as_str()) {
+                return None;
+            }
+            Some((name, *callee))
+        }
+        // Method call on a receiver: only the method name is resolvable.
+        "field_expression" => {
+            let field = find_child_by_field(callee, "field")?;
+            Some((call_target(node_text(&field, source))?, field))
+        }
+        // `foo::<T>()`, `x.collect::<Vec<_>>()`
+        "generic_function" => {
+            let inner = find_child_by_field(callee, "function")?;
+            rust_callee(&inner, source)
+        }
+        _ => None,
+    }
 }
 
 fn extract_const(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Symbol> {
