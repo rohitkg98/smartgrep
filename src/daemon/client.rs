@@ -1,11 +1,23 @@
+//! Daemon client. The daemon talks over a Unix domain socket, so everything
+//! but [`try_daemon`] is Unix-only; elsewhere `--daemon` prints a notice and
+//! commands run directly.
+
+use std::path::Path;
+#[cfg(unix)]
 use std::io::{BufRead, BufReader, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::Command as ProcessCommand;
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use anyhow::{Context, Result};
 
+#[cfg(unix)]
 use super::protocol::{Request, Response};
 
 /// Derive the Unix socket path for a project root.
@@ -17,6 +29,7 @@ use super::protocol::{Request, Response};
 ///
 /// Format: /tmp/smartgrep-<16-char project hash>-v<version slug>.sock
 /// e.g.   /tmp/smartgrep-a3f1b2c4d5e6f7a8-v0_1_0.sock
+#[cfg(unix)]
 pub fn socket_path(project_root: &Path) -> PathBuf {
     let canonical = project_root
         .canonicalize()
@@ -34,12 +47,14 @@ pub fn socket_path(project_root: &Path) -> PathBuf {
 }
 
 /// Derive the PID file path for a project root.
+#[cfg(unix)]
 pub fn pid_path(project_root: &Path) -> PathBuf {
     let sock = socket_path(project_root);
     sock.with_extension("pid")
 }
 
 /// Check if a daemon is running for the given project root.
+#[cfg(unix)]
 pub fn is_running(project_root: &Path) -> bool {
     let sock = socket_path(project_root);
     if !sock.exists() {
@@ -59,6 +74,7 @@ pub fn is_running(project_root: &Path) -> bool {
 }
 
 /// Send a ping to the daemon and return the response.
+#[cfg(unix)]
 pub fn ping(project_root: &Path) -> Result<Response> {
     send_request(
         project_root,
@@ -71,6 +87,7 @@ pub fn ping(project_root: &Path) -> Result<Response> {
 }
 
 /// Send a request to the daemon and return the response.
+#[cfg(unix)]
 pub fn send_request(project_root: &Path, request: &Request) -> Result<Response> {
     let sock = socket_path(project_root);
 
@@ -100,6 +117,7 @@ pub fn send_request(project_root: &Path, request: &Request) -> Result<Response> 
 /// Silently ensure a daemon is running for the given project root.
 /// Spawns one in the background if needed. Returns Ok(()) on success,
 /// Err if auto-start failed (caller should fall back to direct execution).
+#[cfg(unix)]
 pub fn ensure_daemon(project_root: &Path) -> Result<()> {
     if is_running(project_root) {
         return Ok(());
@@ -143,6 +161,7 @@ pub fn ensure_daemon(project_root: &Path) -> Result<()> {
 ///   1. Try connecting to an existing daemon
 ///   2. If no daemon is running, auto-start one silently, then retry
 ///   3. If anything fails, return None (caller falls back to direct execution)
+#[cfg(unix)]
 pub fn try_daemon(
     project_root: &Path,
     command: &str,
@@ -182,7 +201,23 @@ pub fn try_daemon(
     None
 }
 
-#[cfg(test)]
+/// Non-Unix: there is no daemon. Say so once, then let the caller run directly.
+#[cfg(not(unix))]
+pub fn try_daemon(
+    _project_root: &Path,
+    _command: &str,
+    _args: &str,
+    _format: &str,
+    use_daemon: bool,
+) -> Option<String> {
+    if use_daemon {
+        static NOTICE: std::sync::Once = std::sync::Once::new();
+        NOTICE.call_once(|| eprintln!("daemon not supported on this platform; running directly"));
+    }
+    None
+}
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -218,5 +253,17 @@ mod tests {
         let root = PathBuf::from("/tmp/nonexistent-project");
         // With use_daemon=false (default), should always return None immediately
         assert!(try_daemon(&root, "ls", "", "text", true).is_none());
+    }
+}
+
+#[cfg(all(test, not(unix)))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_try_daemon_falls_back_without_unix_sockets() {
+        let root = std::env::temp_dir().join("smartgrep-nonexistent-project");
+        assert!(try_daemon(&root, "ls", "", "text", true).is_none());
+        assert!(try_daemon(&root, "ls", "", "text", false).is_none());
     }
 }

@@ -20,10 +20,20 @@ pub fn install_to(base: &Path) -> Result<PathBuf> {
     Ok(skill_path)
 }
 
+/// The user's home directory: `$HOME`, else `%USERPROFILE%` (Windows, where
+/// `HOME` is usually unset). Empty values count as unset.
+pub fn home_dir(env: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<PathBuf> {
+    ["HOME", "USERPROFILE"]
+        .iter()
+        .filter_map(|k| env(k))
+        .find(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
 pub fn run(global: bool) -> Result<()> {
     // Repo-local installs stay relative to the current directory (historical behavior).
     let base = if global {
-        PathBuf::from(std::env::var("HOME").context("HOME not set")?)
+        home_dir(|k| std::env::var_os(k)).context("home directory not found (set HOME or USERPROFILE)")?
     } else {
         PathBuf::new()
     };
@@ -32,4 +42,31 @@ pub fn run(global: bool) -> Result<()> {
     let scope = if global { "global" } else { "repo" };
     println!("Claude Code skill installed ({scope}): {}", skill_path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+        move |k| vars.iter().find(|(n, _)| *n == k).map(|(_, v)| OsString::from(v))
+    }
+
+    #[test]
+    fn home_prefers_home() {
+        let e = env(&[("HOME", "/home/u"), ("USERPROFILE", r"C:\Users\u")]);
+        assert_eq!(home_dir(e), Some(PathBuf::from("/home/u")));
+    }
+
+    #[test]
+    fn home_falls_back_to_userprofile() {
+        assert_eq!(home_dir(env(&[("USERPROFILE", r"C:\Users\u")])), Some(PathBuf::from(r"C:\Users\u")));
+        assert_eq!(home_dir(env(&[("HOME", ""), ("USERPROFILE", r"C:\Users\u")])), Some(PathBuf::from(r"C:\Users\u")));
+    }
+
+    #[test]
+    fn home_missing() {
+        assert_eq!(home_dir(env(&[])), None);
+    }
 }

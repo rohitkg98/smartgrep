@@ -79,7 +79,7 @@ fn resolve_source(source: &Source, index: &Index) -> Result<Vec<Row>> {
                     .symbols
                     .iter()
                     .filter(|s| {
-                        s.loc.file.to_string_lossy().contains(file_path.as_str())
+                        s.loc.file.to_string_lossy().contains(crate::paths::to_slash(file_path).as_str())
                     })
                     .collect()
             } else if let Some(ref kinds) = kind_filter {
@@ -411,6 +411,16 @@ fn filter_rows(rows: Vec<Row>, or_groups: &[Vec<Condition>]) -> Vec<Row> {
 
 /// Check if a row matches a condition.
 fn matches_condition(row: &Row, condition: &Condition) -> bool {
+    // Stored file paths use `/`; accept native (e.g. Windows `\\`) separators.
+    if condition.field == "file" {
+        if let Value::String(s) = &condition.value {
+            let slashed = crate::paths::to_slash(s);
+            if &slashed != s {
+                let c = Condition { value: Value::String(slashed), ..condition.clone() };
+                return matches_condition(row, &c);
+            }
+        }
+    }
     let field_val = row.get(&condition.field);
 
     match &condition.op {
