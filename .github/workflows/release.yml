@@ -407,7 +407,7 @@ jobs:
           if (($userPath -split ';') -notcontains $dir) { throw "user PATH not updated: $userPath" }
           # installed into the current session's PATH too
           (Get-Command smartgrep).Source
-          smartgrep --help | Select-Object -First 1
+          $help = smartgrep --help   # not `| Select-Object -First 1`: pwsh would stop the process early and report failure
           if ($LASTEXITCODE -ne 0) { throw "smartgrep --help failed" }
 
       - name: Smoke test installed binary
@@ -429,7 +429,7 @@ jobs:
           if (-not $locked) { throw "expected the running exe to be locked" }
           $env:SMARTGREP_ARCHIVE = "$PWD\dist\smartgrep-${{ matrix.artifact }}.zip"
           & .\install.ps1
-          & $exe --help | Select-Object -First 1
+          $help = & $exe --help
           if ($LASTEXITCODE -ne 0) { throw "new smartgrep.exe does not run" }
           Get-ChildItem $dir | Format-Table Name, Length
           Stop-Process -Id $p.Id -Force
@@ -463,7 +463,7 @@ jobs:
           $code = $LASTEXITCODE
           $out
           if ($code -eq 0) {
-            & "$env:RUNNER_TEMP\net-bin\smartgrep.exe" --help | Select-Object -First 1
+            $help = & "$env:RUNNER_TEMP\net-bin\smartgrep.exe" --help
             if ($LASTEXITCODE -ne 0) { throw "installed release does not run" }
           } elseif (($out -replace '\s+', '') -notmatch 'cargoinstall--git') {
             throw "download failure did not mention the cargo fallback"
