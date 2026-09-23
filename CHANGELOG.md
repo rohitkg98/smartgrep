@@ -16,6 +16,8 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 ### Fixed
 - smartgrep builds and runs on Windows. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
 - Windows: file paths in the index and in all output use `/`, and Rust/Java/TypeScript qualified names no longer pick up `\` from Windows paths, so output matches Linux and macOS for the same tree. `context <file>`, `--in`, `in '<path>'` and `file contains` accept `\` separators. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
+- `install-skill --global` on Windows: the home directory falls back to `%USERPROFILE%` when `HOME` is unset. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
+- `update` on Windows runs the PowerShell installer (`install.ps1`) instead of `sh install.sh`; on Unix, detecting curl/wget no longer requires `which`. ([#16](https://github.com/rohitkg98/smartgrep/issues/16))
 - Files with CRLF line endings: multi-line signatures no longer contain `\r`.
 
 ## [0.4.0] - 2026-09-23
