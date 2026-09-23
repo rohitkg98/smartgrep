@@ -6,6 +6,9 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ## [Unreleased]
 
+### Fixed
+- TypeScript: `refs <Name>` now finds import sites. Named imports are recorded once per imported name (`import { User, Role as R } from '../models'` → `../models/User`, `../models/Role`), default imports by their local name (`import X from 'm'` → `m/X`), including `import type`; namespace (`import * as ns`) and side-effect (`import './x'`) imports stay module-level. Qualified queries like `refs models/User` work too. Previously the whole statement was one import of the module path. Existing indexes rebuild automatically. ([#17](https://github.com/rohitkg98/smartgrep/issues/17))
+
 ## [0.5.0] - 2026-09-23
 
 ### Added

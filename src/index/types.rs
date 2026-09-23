@@ -10,8 +10,8 @@ use crate::ir::types::{Dependency, Symbol};
 /// Bump when the index schema or the set of indexed languages changes, so
 /// existing on-disk indexes are rebuilt (e.g. v3: Python files are now indexed;
 /// v4: call deps, per-leaf grouped imports, `reverse_deps` keyed by
-/// [`dep_target_key`]).
-pub const INDEX_VERSION: u32 = 4;
+/// [`dep_target_key`]; v5: TypeScript imports recorded per imported name).
+pub const INDEX_VERSION: u32 = 5;
 
 /// The queryable index: symbols + dependencies + lookup tables.
 #[derive(Debug, Clone, Serialize, Deserialize)]

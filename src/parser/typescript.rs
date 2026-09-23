@@ -216,9 +216,7 @@ fn extract_items(
             }
             "import_statement" => {
                 pending_decorators.clear();
-                if let Some(dep) = extract_import(&child, source, path, prefix) {
-                    ir.dependencies.push(dep);
-                }
+                ir.dependencies.extend(extract_imports(&child, source, path, prefix));
             }
             "export_statement" => {
                 // Collect any decorators that are children of the export_statement
@@ -323,10 +321,21 @@ fn extract_items_with_decorators(
 // Import
 // ---------------------------------------------------------------------------
 
-fn extract_import(node: &Node, source: &str, path: &Path, prefix: &str) -> Option<Dependency> {
-    // import_statement: import { X } from 'module'
-    // The source is a string_fragment inside a string child
-    let source_node = find_child_by_kind(node, "string")?;
+/// Import deps for one `import` statement, one per imported name so that
+/// `refs <Name>` finds the import site:
+/// - named `import { A, B as C } from 'm'` → `m/A`, `m/B` (the original
+///   exported names, not local aliases);
+/// - default `import X from 'm'` → `m/X`;
+/// - namespace `import * as ns from 'm'` and side-effect `import 'm'` → `m`.
+///
+/// `to_name` is `<module>/<Name>`: [`crate::ir::names::dep_target_key`] reduces it
+/// to `Name`, and qualified queries like `refs models/User` still match. A
+/// `.js`/`.ts`-style extension on the module is dropped (`./user.js` → `./user/User`).
+/// Type-only imports (`import type { X }`) are recorded the same way.
+fn extract_imports(node: &Node, source: &str, path: &Path, prefix: &str) -> Vec<Dependency> {
+    let Some(source_node) = find_child_by_kind(node, "string") else {
+        return Vec::new();
+    };
     let raw = node_text(&source_node, source);
     let module_name = raw.trim_matches('\'').trim_matches('"');
 
@@ -335,13 +344,57 @@ fn extract_import(node: &Node, source: &str, path: &Path, prefix: &str) -> Optio
     } else {
         prefix.to_string()
     };
-
-    Some(Dependency {
-        from_qualified: from_qn,
-        to_name: module_name.to_string(),
+    let dep = |to_name: String| Dependency {
+        from_qualified: from_qn.clone(),
+        to_name,
         kind: DepKind::Import,
         loc: loc(node, path),
-    })
+    };
+
+    let mut names: Vec<String> = Vec::new();
+    let mut module_level = false;
+    if let Some(clause) = find_child_by_kind(node, "import_clause") {
+        let mut cursor = clause.walk();
+        for part in clause.named_children(&mut cursor) {
+            match part.kind() {
+                // default import
+                "identifier" => names.push(node_text(&part, source).to_string()),
+                "namespace_import" => module_level = true,
+                "named_imports" => {
+                    let mut c = part.walk();
+                    for spec in part.named_children(&mut c) {
+                        if spec.kind() != "import_specifier" {
+                            continue;
+                        }
+                        if let Some(n) = spec.child_by_field_name("name") {
+                            let text = node_text(&n, source).trim_matches('\'').trim_matches('"');
+                            if !text.is_empty() {
+                                names.push(text.to_string());
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    } else {
+        // `import './x'` (side effect) or `import x = require('m')`.
+        module_level = true;
+    }
+
+    // `./user.js/User` would make `refs user/User` miss; drop the extension.
+    let module_path = [".d.ts", ".tsx", ".ts", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".js"]
+        .iter()
+        .find_map(|ext| module_name.strip_suffix(ext))
+        .unwrap_or(module_name);
+    let mut deps: Vec<Dependency> = names
+        .into_iter()
+        .map(|n| dep(format!("{}/{}", module_path, n)))
+        .collect();
+    if module_level || deps.is_empty() {
+        deps.insert(0, dep(module_name.to_string()));
+    }
+    deps
 }
 
 // ---------------------------------------------------------------------------

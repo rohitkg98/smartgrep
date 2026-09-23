@@ -22,8 +22,61 @@ fn fixture_has_imports() {
         .collect();
     assert_eq!(imports.len(), 2);
     let names: Vec<&str> = imports.iter().map(|d| d.to_name.as_str()).collect();
-    assert!(names.contains(&"events"));
+    // `import { EventEmitter } from 'events'` is recorded per name;
+    // `import * as path from 'path'` stays module-level.
+    assert!(names.contains(&"events/EventEmitter"));
     assert!(names.contains(&"path"));
+}
+
+fn import_targets(src: &str) -> Vec<String> {
+    let ir = parse_file(Path::new("src/app/main.ts"), src).unwrap();
+    ir.dependencies
+        .iter()
+        .filter(|d| d.kind == DepKind::Import)
+        .map(|d| d.to_name.clone())
+        .collect()
+}
+
+#[test]
+fn named_imports_one_dep_per_original_name() {
+    assert_eq!(
+        import_targets("import { A, B as C } from '../models';\n"),
+        vec!["../models/A", "../models/B"]
+    );
+}
+
+#[test]
+fn default_namespace_and_side_effect_imports() {
+    assert_eq!(import_targets("import Def from './def';\n"), vec!["./def/Def"]);
+    assert_eq!(import_targets("import * as ns from 'ns-mod';\n"), vec!["ns-mod"]);
+    assert_eq!(import_targets("import './polyfill';\n"), vec!["./polyfill"]);
+    assert_eq!(
+        import_targets("import React, { useState } from 'react';\n"),
+        vec!["react/React", "react/useState"]
+    );
+}
+
+#[test]
+fn type_only_imports_are_imports() {
+    assert_eq!(
+        import_targets("import type { T1 } from './types';\nimport { type T2, D } from './types';\n"),
+        vec!["./types/T1", "./types/T2", "./types/D"]
+    );
+}
+
+#[test]
+fn import_module_extension_dropped_from_per_name_target() {
+    assert_eq!(import_targets("import { User } from './user.js';\n"), vec!["./user/User"]);
+}
+
+#[test]
+fn named_import_targets_normalize_to_imported_name() {
+    use smartgrep::ir::names::{dep_matches, dep_target_key};
+    assert_eq!(dep_target_key("../models/User"), "User");
+    assert_eq!(dep_target_key("@scope/pkg/Thing"), "Thing");
+    assert!(dep_matches("../models/User", "models/User"));
+    assert!(dep_matches("../models/User", "models.User"));
+    assert!(!dep_matches("../models/User", "other/User"));
 }
 
 // ---------------------------------------------------------------------------

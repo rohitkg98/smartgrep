@@ -295,6 +295,17 @@ fn ts_refs_to_function_finds_callers() {
     assert!(has_ref(&index, "User", DepKind::Call, "services.UserService.createUser"));
 }
 
+#[test]
+fn ts_refs_to_type_finds_named_imports() {
+    let index = build_index("ts_project");
+    // `import { User, Validatable, Repository, ValidationError } from '../models'`
+    assert!(has_ref(&index, "User", DepKind::Import, "services"));
+    assert!(has_ref(&index, "ValidationError", DepKind::Import, "services"));
+    assert!(has_ref(&index, "models/User", DepKind::Import, "services"));
+    // `import { Validatable } from './models'` in the root-level utils.ts.
+    assert!(has_ref(&index, "Validatable", DepKind::Import, "(file)"));
+}
+
 // ---------------------------------------------------------------------------
 // Python
 // ---------------------------------------------------------------------------
