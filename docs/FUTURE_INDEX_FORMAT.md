@@ -9,7 +9,7 @@ title: Future Index Format
 
 ## Current state
 
-The index is serialized as JSON to `.smartgrep/index.json` (or the platform cache directory). JSON was chosen for debuggability: you can open the file with any text editor and inspect what was indexed. During early development this tradeoff is correct.
+The index is serialized as JSON to `<project root>/.smartgrep/index.json` (`src/index/store.rs`). The JSON already carries a `version` field; `store::load` rejects any file whose version differs from `INDEX_VERSION` in `src/index/types.rs` (currently 3), or that fails to deserialize, and the caller rebuilds. JSON was chosen for debuggability: you can open the file with any text editor and inspect what was indexed. During early development this tradeoff is correct.
 
 ## Why we'll want a binary format eventually
 
@@ -19,7 +19,7 @@ JSON has two costs that grow with codebase size:
 
 2. **Load time.** JSON deserialization is text parsing — tokenizing, allocating strings, building maps. Bincode deserialization is a near-zero-copy read from bytes into Rust structs. At scale the difference is 5–10x.
 
-For most current use cases neither cost is noticeable. The daemon keeps the index in memory, so load time is paid once per session. But as codebases grow, a cold start (no daemon running) that takes 200–500ms will become friction.
+For most current use cases neither cost is noticeable. The opt-in daemon (`--daemon`) keeps the index in memory, so load time is paid once per session. But as codebases grow, a cold start (no daemon — the default) that takes 200–500ms will become friction.
 
 ## Proposed approach
 
@@ -34,7 +34,7 @@ Byte layout:
 
 The magic number makes it easy to distinguish a smartgrep index file from arbitrary data. The version field allows the loader to detect format changes.
 
-Define the constant in a new module `src/version.rs`:
+Define the constant in a new module `src/version.rs` (or fold it into the existing `INDEX_VERSION`, which today only versions the JSON schema):
 
 ```rust
 /// Increment this whenever the on-disk index format changes in a

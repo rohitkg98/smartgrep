@@ -10,7 +10,7 @@ title: "01 — Overview"
 Agents that navigate code typically do one of two things:
 
 - **Read whole files** — accurate but expensive; a 500-line file costs 500 lines of context even if you only needed the function signatures.
-- **Grep for patterns** — cheap but fragile; regex can't tell a function definition from a comment, and it can't answer "what does this function call?".
+- **Grep for patterns** — cheap but fragile; regex can't tell a function definition from a comment, and it can't answer "which classes implement this interface?".
 
 smartgrep's answer: parse the source structure once, store it as a queryable index, and let agents ask structural questions instead of textual ones.
 
@@ -23,7 +23,8 @@ grep -r "fn parse" src/
 
 # Good: ask the structure directly
 smartgrep ls functions --in src/parser/
-smartgrep deps parse_file
+smartgrep show Index
+smartgrep query "classes implementing Serializable"
 smartgrep query "structs where file contains 'ir/' | with fields"
 ```
 
@@ -31,12 +32,12 @@ smartgrep query "structs where file contains 'ir/' | with fields"
 
 ```mermaid
 flowchart LR
-    src["Source files\n(.rs, .go, .java, ...)"]
+    src["Source files\n(.rs, .java, .go, .ts, .py)"]
     parser["Parser\ntree-sitter"]
     ir["IR\nSymbols + Dependencies"]
     builder["Index Builder\nlookup tables"]
     index["Index\n(queryable)"]
-    cmd["Commands\nls / show / deps / refs / query"]
+    cmd["Commands\ncontext / map / ls / show / deps / refs / query"]
 
     src --> parser --> ir --> builder --> index --> cmd
 ```
@@ -53,7 +54,7 @@ The contracts are defined as Rust types. Parsers produce `Ir`. The builder consu
 
 ## Why this structure matters
 
-Adding a language means writing one parser. The builder and every command work unchanged because they only see `Ir` and `Index`. This is the core architectural promise.
+Adding a language means writing one parser and registering it in `src/lang.rs`. The builder and every command work unchanged because they only see `Ir` and `Index`. This is the core architectural promise. Rust, Java, Go, TypeScript, and Python are supported today.
 
 ---
 

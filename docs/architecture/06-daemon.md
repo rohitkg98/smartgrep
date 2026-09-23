@@ -13,7 +13,9 @@ Every smartgrep invocation without a daemon pays the same startup cost: load the
 
 The daemon keeps the index in memory and answers queries over a Unix socket. Per-call overhead drops to a socket round-trip.
 
-The daemon also runs a file watcher. When source files change it rebuilds the index in the background so the next query sees fresh data without any explicit `smartgrep index` call.
+The daemon is **opt-in**: pass the global `--daemon` flag (e.g. `smartgrep --daemon ls functions`). Without it, every command loads the index directly.
+
+The daemon also runs a file watcher. When a file with a registered extension (per `src/lang.rs`) changes outside a skipped directory, it rebuilds the whole index in the background so the next query sees fresh data without any explicit `smartgrep index` call.
 
 ## Socket path
 
@@ -44,14 +46,14 @@ The protocol is newline-delimited JSON over the Unix socket. One request line, o
 {"status": "error", "message": "unknown command"}
 ```
 
-The `command` field maps directly to the CLI subcommand name. `args` is the unparsed argument string. `format` is `"text"` or `"json"`.
+The `command` field maps directly to the CLI subcommand name (`ls`, `show`, `deps`, `refs`, `context`, `query`, `index`, plus internal `ping` and `shutdown`). `args` is the unparsed argument string. `format` is `"text"` or `"json"` (default `"text"`).
 
 ## Auto-start
 
-Clients never need to start the daemon explicitly. `try_daemon` in `src/daemon/client.rs` handles it:
+With `--daemon`, clients never need to start the daemon explicitly. `try_daemon` in `src/daemon/client.rs` handles it:
 
 ```
-CLI invocation
+CLI invocation (--daemon)
     │
     ├── daemon socket exists? ──yes──► send request ──► return output
     │
@@ -74,7 +76,7 @@ The daemon shuts itself down after 1800 seconds (30 minutes) of no incoming requ
 2. Write a PID file (same path as socket, `.pid` extension).
 3. Build the initial index synchronously. Log symbol and dep counts.
 4. Wrap the index in `Arc<Mutex<Index>>`.
-5. Start a file watcher thread that holds a clone of the `Arc`. On file events, it rebuilds the index and swaps the `Mutex` contents.
+5. Start a `notify` file watcher that holds a clone of the `Arc`. It watches `src/` recursively and the project root non-recursively; on a relevant event it rebuilds the index and swaps the `Mutex` contents. (Source trees outside `src/` and below the root are not watched — a known gap for Go/Java/Python layouts.)
 6. Bind the Unix socket and enter the accept loop.
 7. Each accepted connection is handled: read one JSON line, dispatch to command handler, write one JSON line, close.
 

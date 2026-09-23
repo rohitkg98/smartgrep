@@ -116,7 +116,7 @@ smartgrep query "functions where name starts_with 'New' and file contains 'servi
 - **Rust traits** → use `traits` (kind="trait", Rust only)
 - **`interfaces` and `traits` are distinct** — `interfaces` matches Java/Go/TS interface, `traits` matches Rust trait
 - **Go method receivers** → stored in `parent` field (e.g., `methods where parent = MultiGateway`)
-- **Generated code** → filter out with `where file not contains '.pb.go'`
+- **Generated code** → `map` skips generated files by default; `query` has no negation operator yet (`not contains` is unsupported), so scope with `in '<path>'` or `file contains` instead
 - **`implementing` clause** → `structs implementing Display` finds types that implement a trait/interface
 - **TS decorators** → stored in `attributes` (e.g., `classes where attributes contains '@Injectable'`)
 - **TS namespaces** → `namespaces` or `namespace` (kind="namespace", TS only)

@@ -7,7 +7,7 @@ title: smartgrep
 
 Structural code navigation for agents.
 
-smartgrep parses source code with tree-sitter to extract symbols (functions, structs, traits, impls, and more) and makes them queryable from the command line. Instead of reading entire files or guessing at grep patterns, an agent can ask "what functions are in this module?" or "what depends on this type?" and get a precise, low-token answer.
+smartgrep parses Rust, Java, Go, TypeScript, and Python source with tree-sitter to extract symbols (functions, structs, classes, traits, interfaces, and more) and makes them queryable from the command line. Instead of reading entire files or guessing at grep patterns, an agent can ask "what functions are in this module?" or "what depends on this type?" and get a precise, low-token answer.
 
 ## Architecture slides
 
@@ -20,6 +20,7 @@ Each slide covers one layer of the system, building from the problem statement t
 5. [Query DSL](architecture/05-query-dsl) — Grammar, AST, execution
 6. [Daemon](architecture/06-daemon) — Persistent process, socket protocol, auto-start
 7. [Adding a language](architecture/07-adding-a-language) — What it actually takes
+8. [Language-native vocabulary](architecture/08-language-native-vocabulary) — Native kind strings, DSL terms, and the `implementing` clause
 
 ## Reference
 
