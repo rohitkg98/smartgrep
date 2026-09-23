@@ -42,9 +42,17 @@ items_tsv() {
         | [.id, (.content.number // "draft"), (.fieldValueByName.name // "-"), .content.title] | @tsv'
 }
 
+# Resolve via the issue's own project items rather than the board listing,
+# which can lag behind writes.
 item_id_for_issue() {
     local id
-    id=$(items_tsv | awk -F'\t' -v n="$1" '$2 == n { print $1 }')
+    id=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F n="$1" -f query='
+      query($owner: String!, $name: String!, $n: Int!) {
+        repository(owner: $owner, name: $name) { issue(number: $n) {
+          projectItems(first: 20) { nodes { id project { number } } }
+        } }
+      }' --jq ".data.repository.issue.projectItems.nodes[] | select(.project.number == $PROJECT_NUMBER) | .id" 2>/dev/null) \
+        || die "issue #$1 not found in $REPO"
     [[ -n "$id" ]] || die "issue #$1 is not on the board"
     echo "$id"
 }
@@ -73,7 +81,8 @@ apply_position_flag() { # item_id, flag, [issue]
     case "${2:-}" in
         --top)   set_position "$1" "" ;;
         --after) [[ -n "${3:-}" ]] || die "--after needs an issue number"
-                 set_position "$1" "$(item_id_for_issue "$3")" ;;
+                 local after; after=$(item_id_for_issue "$3")
+                 set_position "$1" "$after" ;;
         "")      ;;
         *)       die "unknown flag '$2'" ;;
     esac
@@ -96,11 +105,13 @@ case "$cmd" in
         ;;
     status)
         [[ $# -eq 2 ]] || die "usage: status <N> \"Todo\"|\"In Progress\"|\"Done\""
-        set_status "$(item_id_for_issue "$1")" "$2"
+        item=$(item_id_for_issue "$1")
+        set_status "$item" "$2"
         ;;
     move)
         [[ $# -ge 2 ]] || die "usage: move <N> --after <M>|--top"
-        apply_position_flag "$(item_id_for_issue "$1")" "$2" "${3:-}"
+        item=$(item_id_for_issue "$1")
+        apply_position_flag "$item" "$2" "${3:-}"
         ;;
     *)
         sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'

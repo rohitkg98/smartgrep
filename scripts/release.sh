@@ -8,7 +8,8 @@
 # Steps: preflight checks (on main, clean tree, in sync with origin, new version,
 # tag unused) → cargo test → regression suite → bump Cargo.toml/Cargo.lock →
 # commit "bump version to X.Y.Z" → tag vX.Y.Z → push main + tag → wait for the
-# Release workflow and verify the binaries were attached.
+# Release workflow, verify the binaries were attached, then mark issues closed
+# by commits in this release (`Closes #N`) as Done on the roadmap board.
 #
 # The tag push triggers .github/workflows/release.yml, which builds the binaries
 # and creates the GitHub release. --dry-run runs checks and tests, then stops.
@@ -79,3 +80,20 @@ gh run watch "$RUN_ID" --repo "$REPO" --exit-status --interval 20 >/dev/null \
 ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets | length')
 [[ "$ASSETS" -ge "$EXPECTED_ASSETS" ]] || die "release $TAG has $ASSETS assets, expected $EXPECTED_ASSETS"
 echo; echo "released $TAG with $ASSETS assets: https://github.com/$REPO/releases/tag/$TAG"
+
+step "Update roadmap board"
+# Issues closed by commits in this release (`Closes #N`, `Fixes #N`, `Resolves #N`).
+PREV_TAG=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+RANGE="${PREV_TAG:+$PREV_TAG..}$TAG"
+SHIPPED=$(git log "$RANGE" --format=%B \
+    | grep -oiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' | grep -oE '[0-9]+' | sort -un || true)
+for n in $SHIPPED; do
+    gh issue close "$n" --repo "$REPO" >/dev/null 2>&1 || true  # usually already closed by the push
+    gh issue comment "$n" --repo "$REPO" \
+        --body "Shipped in [$TAG](https://github.com/$REPO/releases/tag/$TAG)." >/dev/null
+    scripts/roadmap.sh status "$n" Done || echo "warning: could not set #$n to Done"
+    echo "#$n → Done (shipped in $TAG)"
+done
+[[ -n "$SHIPPED" ]] || echo "no issues closed by commits in $RANGE"
+echo "still in progress:"
+scripts/roadmap.sh list | grep 'In Progress' || echo "  (none)"

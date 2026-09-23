@@ -116,7 +116,7 @@ smartgrep query "functions where name starts_with 'New' and file contains 'servi
 - **Rust traits** → use `traits` (kind="trait", Rust only)
 - **`interfaces` and `traits` are distinct** — `interfaces` matches Java/Go/TS interface, `traits` matches Rust trait
 - **Go method receivers** → stored in `parent` field (e.g., `methods where parent = MultiGateway`)
-- **Generated code** → `map` skips generated files by default; `query` has no negation operator yet (`not contains` is unsupported), so scope with `in '<path>'` or `file contains` instead
+- **Generated code** → filter out with `where file not contains '.pb.go'` (`not` also works before `starts_with` / `ends_with`); `map` skips generated files by default
 - **`implementing` clause** → `structs implementing Display` finds types that implement a trait/interface
 - **TS decorators** → stored in `attributes` (e.g., `classes where attributes contains '@Injectable'`)
 - **TS namespaces** → `namespaces` or `namespace` (kind="namespace", TS only)
@@ -143,6 +143,7 @@ scripts/roadmap.sh status 6 "In Progress"                 # Todo | In Progress |
 scripts/roadmap.sh move 13 --after 7                      # or --top
 gh issue view 6 / gh issue edit 6 --body-file body.md     # read/edit item details
 ```
+- Keep the board in sync as work ships. New work that isn't on the board gets an item first (`add`), so the release can close it.
 - Starting work on an item: set it `In Progress`. Reference it in commits (`Refs #6`); use `Closes #6` in the commit that finishes it (the board's auto-close workflow moves it to Done).
 - Needs `gh` with the `project` scope (`gh auth refresh -s project`).
 - If `list` misses an item you just created, check https://www.githubstatus.com — the project item listing can lag during GitHub incidents even though the item exists (`gh issue view <N> --json projectItems`).
@@ -150,5 +151,5 @@ gh issue view 6 / gh issue edit 6 --body-file body.md     # read/edit item detai
 ## Commits and releases
 - Commit style: short lowercase subject (`added python support`, `bump version to 0.2.1`), optional bullet body. One logical change per commit — split refactors from features, and make sure each commit passes `cargo test` on its own.
 - Before committing: `cargo test` and `SMARTGREP=./target/debug/smartgrep bash tests/regression/run.sh` (CI runs both).
-- Release: `scripts/release.sh <X.Y.Z>` (try `--dry-run` first). It checks the tree is clean and in sync on `main`, runs tests + regression, bumps `Cargo.toml`/`Cargo.lock`, commits `bump version to X.Y.Z`, tags `vX.Y.Z`, pushes, then waits for `.github/workflows/release.yml` and verifies the 3 binaries are attached.
+- Release: `scripts/release.sh <X.Y.Z>` (try `--dry-run` first). It checks the tree is clean and in sync on `main`, runs tests + regression, bumps `Cargo.toml`/`Cargo.lock`, commits `bump version to X.Y.Z`, tags `vX.Y.Z`, pushes, then waits for `.github/workflows/release.yml` and verifies the 3 binaries are attached. Finally it keeps the board in sync: every issue closed by a commit in the release (`Closes #N` / `Fixes #N`) gets a "Shipped in vX.Y.Z" comment and is set to Done, and it prints what's still In Progress.
 - Versioning: minor bump for new languages/commands or index format changes, patch for fixes.
