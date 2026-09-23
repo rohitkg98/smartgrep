@@ -278,3 +278,242 @@ fn index_has_correct_dep_count() {
     let index = build_test_index();
     assert_eq!(index.deps.len(), 3);
 }
+
+// ---------------------------------------------------------------------------
+// Type references derived by the builder (TypeRef / FieldType)
+// ---------------------------------------------------------------------------
+
+fn sym(name: &str, qn: &str, kind: &str, file: &str, line: usize) -> Symbol {
+    Symbol::new(
+        name.to_string(),
+        qn.to_string(),
+        kind,
+        SourceLoc { file: PathBuf::from(file), line, col: 1 },
+        Visibility::Public,
+    )
+}
+
+fn callable(qn: &str, kind: &str, file: &str, params: &[&str], ret: Option<&str>) -> Symbol {
+    let name = qn.rsplit(|c| c == ':' || c == '.').next().unwrap();
+    let mut s = sym(name, qn, kind, file, 10);
+    s.params = params
+        .iter()
+        .enumerate()
+        .map(|(i, t)| Param { name: format!("p{}", i), type_name: t.to_string() })
+        .collect();
+    s.return_type = ret.map(str::to_string);
+    s
+}
+
+fn with_fields(mut s: Symbol, types: &[&str]) -> Symbol {
+    s.fields = types
+        .iter()
+        .enumerate()
+        .map(|(i, t)| Field { name: format!("f{}", i), type_name: t.to_string(), visibility: Visibility::Public })
+        .collect();
+    s
+}
+
+/// `(kind, to_name)` of the derived deps from `qn`.
+fn type_deps_of(index: &Index, qn: &str) -> Vec<(String, String)> {
+    index
+        .deps_of(qn)
+        .into_iter()
+        .filter(|d| matches!(d.kind, DepKind::TypeRef | DepKind::FieldType))
+        .map(|d| (d.kind.to_string(), d.to_name.clone()))
+        .collect()
+}
+
+fn tr(to: &str) -> (String, String) {
+    ("type_ref".to_string(), to.to_string())
+}
+
+fn ft(to: &str) -> (String, String) {
+    ("field_type".to_string(), to.to_string())
+}
+
+#[test]
+fn type_refs_rust_references_and_wrappers() {
+    let f = "src/commands/deps.rs";
+    let ir = Ir {
+        symbols: vec![
+            sym("Index", "crate::index::types::Index", "struct", "src/index/types.rs", 1),
+            sym("Symbol", "crate::ir::types::Symbol", "struct", "src/ir/types.rs", 1),
+            callable("crate::commands::deps::collect_deps", "fn", f, &["&Index", "&str"], Some("Vec<DepsGroup<'a>>")),
+            callable("crate::x::find", "fn", f, &["&mut crate::index::types::Index"], Some("Option<&Symbol>")),
+            callable("crate::x::maybe", "fn", f, &["Option<Index>", "&self"], Some("Result<(), String>")),
+        ],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    assert_eq!(type_deps_of(&index, "crate::commands::deps::collect_deps"), vec![tr("Index")]);
+    assert_eq!(
+        type_deps_of(&index, "crate::x::find"),
+        vec![tr("crate::index::types::Index"), tr("Symbol")]
+    );
+    assert_eq!(type_deps_of(&index, "crate::x::maybe"), vec![tr("Index")]);
+
+    // refs by bare and qualified name; the dep carries the symbol's location.
+    let refs: Vec<&str> = index.refs_to("Index").iter().map(|d| d.from_qualified.as_str()).collect();
+    assert_eq!(refs, vec!["crate::commands::deps::collect_deps", "crate::x::find", "crate::x::maybe"]);
+    assert_eq!(index.refs_to("types::Index").len(), 1);
+    let d = index.refs_to("Symbol")[0];
+    assert_eq!((d.loc.file.to_str().unwrap(), d.loc.line), (f, 10));
+}
+
+#[test]
+fn type_refs_java_generics() {
+    let f = "src/com/example/UserService.java";
+    let ir = Ir {
+        symbols: vec![
+            sym("User", "com.example.User", "class", "src/com/example/User.java", 3),
+            with_fields(sym("UserService", "com.example.UserService", "class", f, 8), &["Map<Long, User>", "long"]),
+            callable("com.example.UserService.listAll", "method", f, &[], Some("List<User>")),
+            callable("com.example.UserService.save", "method", f, &["com.example.User"], Some("long")),
+        ],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    assert_eq!(type_deps_of(&index, "com.example.UserService"), vec![ft("User")]);
+    assert_eq!(type_deps_of(&index, "com.example.UserService.listAll"), vec![tr("User")]);
+    assert_eq!(type_deps_of(&index, "com.example.UserService.save"), vec![tr("com.example.User")]);
+    assert!(index.refs_to("example.User").iter().all(|d| d.to_name == "com.example.User"));
+}
+
+#[test]
+fn type_refs_python_subscripts() {
+    let f = "src/shop/services/user_service.py";
+    let ir = Ir {
+        symbols: vec![
+            sym("User", "shop.models.user.User", "class", "src/shop/models/user.py", 15),
+            callable("shop.services.user_service.paginate", "def", f, &["Iterable[User]", "int"], Some("list[User]")),
+            callable("shop.services.user_service.UserService.__init__", "method", f, &["Repository[User]"], Some("None")),
+            with_fields(sym("Box", "shop.box.Box", "class", f, 40), &["dict[str, list[User]]", ""]),
+        ],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    // Deduped: `User` in both a param and the return type is one dep.
+    assert_eq!(type_deps_of(&index, "shop.services.user_service.paginate"), vec![tr("User")]);
+    // `Repository` is not a project type here, so only `User` counts.
+    assert_eq!(type_deps_of(&index, "shop.services.user_service.UserService.__init__"), vec![tr("User")]);
+    assert_eq!(type_deps_of(&index, "shop.box.Box"), vec![ft("User")]);
+}
+
+#[test]
+fn type_refs_go_pointers_slices_and_packages() {
+    let f = "service.go";
+    let ir = Ir {
+        symbols: vec![
+            with_fields(sym("User", "main.User", "struct", "model.go", 10), &["int64", "string"]),
+            with_fields(sym("UserService", "main.UserService", "struct", f, 14), &["map[int64]*User", "int64"]),
+            callable("main.NewUser", "func", "model.go", &["int64", "string"], Some("*User")),
+            callable("main.UserService.FindByID", "method", f, &["int64"], Some("(*User, error)")),
+            callable("main.Batch", "func", f, &["[]User", "[]*models.User"], None),
+        ],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    assert!(type_deps_of(&index, "main.User").is_empty(), "primitives only");
+    assert_eq!(type_deps_of(&index, "main.UserService"), vec![ft("User")]);
+    assert_eq!(type_deps_of(&index, "main.NewUser"), vec![tr("User")]);
+    assert_eq!(type_deps_of(&index, "main.UserService.FindByID"), vec![tr("User")]);
+    assert_eq!(type_deps_of(&index, "main.Batch"), vec![tr("User"), tr("models.User")]);
+}
+
+#[test]
+fn type_refs_typescript_arrays_unions_and_promises() {
+    let f = "src/services/user-service.ts";
+    let ir = Ir {
+        symbols: vec![
+            sym("User", "User", "class", "src/models.ts", 17),
+            sym("PageRequest", "Pagination.PageRequest", "interface", "src/utils.ts", 22),
+            callable("services.UserService.listAll", "method", f, &[], Some("User[]")),
+            callable("services.UserService.findById", "method", f, &["number"], Some("User | null")),
+            callable("services.load", "function", f, &["PageRequest"], Some("Promise<User>")),
+            callable("services.ext", "function", f, &["Request", "Response"], Some("Promise<void>")),
+        ],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    assert_eq!(type_deps_of(&index, "services.UserService.listAll"), vec![tr("User")]);
+    assert_eq!(type_deps_of(&index, "services.UserService.findById"), vec![tr("User")]);
+    assert_eq!(type_deps_of(&index, "services.load"), vec![tr("PageRequest"), tr("User")]);
+    assert!(type_deps_of(&index, "services.ext").is_empty(), "external types ignored");
+}
+
+#[test]
+fn type_refs_ignore_primitives_external_types_and_non_type_symbols() {
+    let ir = Ir {
+        symbols: vec![
+            sym("Config", "crate::Config", "struct", "src/lib.rs", 1),
+            // A function named like a type does not make `load` a type name.
+            sym("load", "crate::load", "fn", "src/lib.rs", 5),
+            callable("crate::run", "fn", "src/lib.rs", &["u32", "&str", "HashMap<String, Vec<u8>>", "load"], Some("std::io::Result<()>")),
+        ],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    assert!(index.deps.is_empty(), "{:?}", index.deps);
+}
+
+#[test]
+fn type_refs_recursive_field_kept_and_deduped() {
+    let ir = Ir {
+        symbols: vec![with_fields(
+            sym("Node", "crate::Node", "struct", "src/lib.rs", 1),
+            &["Option<Box<Node>>", "Vec<Node>", "u32"],
+        )],
+        dependencies: vec![],
+    };
+    let index = builder::build(&ir);
+    assert_eq!(type_deps_of(&index, "crate::Node"), vec![ft("Node")]);
+    assert_eq!(index.refs_to("Node").len(), 1);
+}
+
+#[test]
+fn type_refs_grouped_with_their_file() {
+    let a = "src/a.rs";
+    let b = "src/b.rs";
+    let import = |file: &str| Dependency {
+        from_qualified: "m".to_string(),
+        to_name: "crate::T".to_string(),
+        kind: DepKind::Import,
+        loc: SourceLoc { file: PathBuf::from(file), line: 1, col: 1 },
+    };
+    let ir = Ir {
+        symbols: vec![
+            sym("T", "crate::T", "struct", a, 1),
+            callable("crate::a::f", "fn", a, &["T"], None),
+            callable("crate::b::g", "fn", b, &["T"], None),
+        ],
+        dependencies: vec![import(a), import(b)],
+    };
+    let index = builder::build(&ir);
+    let order: Vec<(&str, String)> = index
+        .deps
+        .iter()
+        .map(|d| (d.loc.file.to_str().unwrap(), d.kind.to_string()))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            (a, "import".to_string()),
+            (a, "type_ref".to_string()),
+            (b, "import".to_string()),
+            (b, "type_ref".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn type_name_tokens_split_paths() {
+    use smartgrep::index::builder::type_name_tokens;
+    assert_eq!(type_name_tokens("&mut crate::x::Index"), vec!["mut", "crate::x::Index"]);
+    assert_eq!(type_name_tokens("map[int64]*models.User"), vec!["map", "int64", "models.User"]);
+    assert_eq!(type_name_tokens("Promise<User[]>"), vec!["Promise", "User"]);
+    assert_eq!(type_name_tokens("{ a: User }"), vec!["a", "User"]);
+    assert_eq!(type_name_tokens("Vec<DepsGroup<'a>>"), vec!["Vec", "DepsGroup", "a"]);
+    assert_eq!(type_name_tokens("[u8; 32]"), vec!["u8"]);
+    assert_eq!(type_name_tokens("x::"), vec!["x"]);
+}

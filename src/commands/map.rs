@@ -287,7 +287,10 @@ fn outgoing_dirs(
         // Map shows module-level coupling (imports / implements). Call targets
         // are unresolved names (`new`, `push`), so a by-name lookup would
         // invent edges to whichever directory happens to define that name.
-        if dep.kind == crate::ir::types::DepKind::Call {
+        // Type references (params, returns, fields) are skipped too: they
+        // are matched by name only and would add edges the imports don't.
+        use crate::ir::types::DepKind;
+        if matches!(dep.kind, DepKind::Call | DepKind::TypeRef | DepKind::FieldType) {
             continue;
         }
         // Try module-path resolution first (works for import deps like `crate::ir::types`)

@@ -338,3 +338,104 @@ fn python_refs_find_imports_and_callers() {
     assert_eq!(query_names(&index, "classes implementing Entity"), vec!["User"]);
     assert_eq!(query_names(&index, "classes implementing Generic"), vec!["Repository"]);
 }
+
+// ---------------------------------------------------------------------------
+// Type references (TypeRef / FieldType, derived by the index builder)
+// ---------------------------------------------------------------------------
+
+/// `(kind, to_name)` of the type deps of `qn`.
+fn type_deps_of(index: &Index, qn: &str) -> Vec<(String, String)> {
+    index
+        .deps_of(qn)
+        .into_iter()
+        .filter(|d| matches!(d.kind, DepKind::TypeRef | DepKind::FieldType))
+        .map(|d| (d.kind.to_string(), d.to_name.clone()))
+        .collect()
+}
+
+fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
+    v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+}
+
+#[test]
+fn rust_type_refs_from_params_returns_and_fields() {
+    let index = build_index("rust_project");
+    // `fn find_by_id(&self, id: u64) -> Option<&User>`
+    assert!(has_ref(&index, "User", DepKind::TypeRef, "crate::service::UserService::find_by_id"));
+    // `fn save(&mut self, user: User) -> Result<u64, AppError>`; the project
+    // defines its own `type Result<T>` alias, so `Result` counts too.
+    assert_eq!(
+        type_deps_of(&index, "crate::service::UserService::save"),
+        pairs(&[("type_ref", "User"), ("type_ref", "Result"), ("type_ref", "AppError")])
+    );
+    // `users: HashMap<u64, User>`
+    assert!(has_ref(&index, "User", DepKind::FieldType, "crate::service::UserService"));
+    // `User` has only primitive / std fields (`u64`, `String`, `bool`).
+    assert!(type_deps_of(&index, "crate::models::User").is_empty());
+    // Primitive-only signatures produce nothing.
+    assert!(type_deps_of(&index, "crate::service::UserService::generate_id").is_empty());
+}
+
+#[test]
+fn go_type_refs_from_pointers_and_maps() {
+    let index = build_index("go_project");
+    // `func NewUser(...) *User`, `FindByID(id int64) (*User, error)`
+    assert!(has_ref(&index, "User", DepKind::TypeRef, "main.NewUser"));
+    assert!(has_ref(&index, "User", DepKind::TypeRef, "main.UserService.FindByID"));
+    // `users map[int64]*User`
+    assert!(has_ref(&index, "User", DepKind::FieldType, "main.UserService"));
+    // `Permissions []Permission` (Permission is a `type` alias)
+    assert!(has_ref(&index, "Permission", DepKind::FieldType, "main.Role"));
+    assert!(has_ref(&index, "AppError", DepKind::TypeRef, "main.NewNotFoundError"));
+}
+
+#[test]
+fn java_type_refs_from_generics() {
+    let index = build_index("java_project");
+    // `List<User> listAll()`, `User findById(long)`, `long save(User)`
+    for m in ["listAll", "findById", "save"] {
+        let from = format!("com.example.UserService.{}", m);
+        assert!(has_ref(&index, "User", DepKind::TypeRef, &from), "{}", from);
+    }
+    // `Map<Long, User> users`
+    assert!(has_ref(&index, "User", DepKind::FieldType, "com.example.UserService"));
+    // `List<T>` in the generic interface: `T` is not a project type.
+    assert!(type_deps_of(&index, "com.example.Repository.listAll").is_empty());
+}
+
+#[test]
+fn ts_type_refs_from_arrays_and_unions() {
+    let index = build_index("ts_project");
+    // `listAll(): User[]`, `findById(id): User | null`, `save(user: User)`
+    for m in ["listAll", "findById", "save"] {
+        let from = format!("services.UserService.{}", m);
+        assert!(has_ref(&index, "User", DepKind::TypeRef, &from), "{}", from);
+    }
+    // `private users: Map<number, User>`
+    assert!(has_ref(&index, "User", DepKind::FieldType, "services.UserService"));
+    // `validateAll(items: Validatable[])`
+    assert!(has_ref(&index, "Validatable", DepKind::TypeRef, "validateAll"));
+    // `const createUserService = (): UserService => ...`
+    assert!(has_ref(&index, "UserService", DepKind::TypeRef, "services.createUserService"));
+}
+
+#[test]
+fn python_type_refs_from_annotations() {
+    let index = build_index("python_project");
+    // `def paginate(items: Iterable[User], ...) -> list[User]` — deduped.
+    assert_eq!(
+        type_deps_of(&index, "shop.services.user_service.paginate"),
+        pairs(&[("type_ref", "User")])
+    );
+    // `def __init__(self, repo: Repository[User])`
+    assert_eq!(
+        type_deps_of(&index, "shop.services.user_service.UserService.__init__"),
+        pairs(&[("type_ref", "Repository"), ("type_ref", "User")])
+    );
+    assert!(has_ref(&index, "User", DepKind::TypeRef, "shop.services.user_service.UserService.register"));
+    // `role: Role` class attribute
+    assert!(has_ref(&index, "Role", DepKind::FieldType, "shop.models.user.User"));
+    // `EntityId` type alias used in a field and a param
+    assert!(has_ref(&index, "EntityId", DepKind::FieldType, "shop.models.base.Entity"));
+    assert!(has_ref(&index, "EntityId", DepKind::TypeRef, "shop.models.base.Entity.__init__"));
+}

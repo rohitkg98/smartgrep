@@ -53,13 +53,8 @@ fn test_ir() -> Ir {
         },
     ];
 
+    // `foo(x: Bar)`'s TypeRef to `Bar` is derived by the builder from params.
     let dependencies = vec![
-        Dependency {
-            from_qualified: "crate::alpha::foo".to_string(),
-            to_name: "crate::alpha::Bar".to_string(),
-            kind: DepKind::TypeRef,
-            loc: SourceLoc { file: file_a.clone(), line: 10, col: 15 },
-        },
         Dependency {
             from_qualified: "crate::alpha::foo".to_string(),
             to_name: "std::fmt::Display".to_string(),
@@ -105,9 +100,13 @@ fn deps_duplicate_name_returns_multiple_groups() {
     // Find the alpha::foo group
     let alpha = results.iter().find(|g| g.qualified_name == "crate::alpha::foo").unwrap();
     assert_eq!(alpha.deps.len(), 2);
-    let dep_names: Vec<&str> = alpha.deps.iter().map(|d| d.to_name.as_str()).collect();
-    assert!(dep_names.contains(&"crate::alpha::Bar"));
-    assert!(dep_names.contains(&"std::fmt::Display"));
+    let dep_names: Vec<(&str, String)> = alpha
+        .deps
+        .iter()
+        .map(|d| (d.to_name.as_str(), d.kind.to_string()))
+        .collect();
+    assert!(dep_names.contains(&("Bar", "type_ref".to_string())));
+    assert!(dep_names.contains(&("std::fmt::Display", "implements".to_string())));
 
     // Find the beta::foo group
     let beta = results.iter().find(|g| g.qualified_name == "crate::beta::foo").unwrap();

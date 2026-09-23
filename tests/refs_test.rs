@@ -53,21 +53,9 @@ fn refs_test_ir() -> Ir {
         },
     ];
 
+    // `run(cfg: &Config)` and `init() -> Config` get their TypeRef deps from
+    // the builder (derived from params / return types).
     let dependencies = vec![
-        // beta::run references Config as a type
-        Dependency {
-            from_qualified: "crate::beta::run".to_string(),
-            to_name: "Config".to_string(),
-            kind: DepKind::TypeRef,
-            loc: SourceLoc { file: file_b.clone(), line: 10, col: 20 },
-        },
-        // gamma::init also references Config as a type
-        Dependency {
-            from_qualified: "crate::gamma::init".to_string(),
-            to_name: "Config".to_string(),
-            kind: DepKind::TypeRef,
-            loc: SourceLoc { file: file_c.clone(), line: 3, col: 30 },
-        },
         // beta::run imports alpha::Config
         Dependency {
             from_qualified: "crate::beta".to_string(),

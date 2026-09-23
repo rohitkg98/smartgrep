@@ -6,6 +6,12 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ## [Unreleased]
 
+### Added
+- Type references in `refs` and `deps` for all languages: `refs Index` now lists functions and methods that take or return an `Index` (`type_ref`) and types with an `Index` field (`field_type`), and `deps <fn>` shows the project types in its signature. Only types defined in the project count; primitives, standard wrappers (`Option`, `Vec`, `List`, `Promise`, ...) and external types are skipped. ([#15](https://github.com/rohitkg98/smartgrep/issues/15))
+
+### Changed
+- Index format version 6: existing indexes rebuild automatically on first use. Indexes are about 5-10% larger because of type-reference dependencies.
+
 ### Fixed
 - TypeScript: `refs <Name>` now finds import sites. Named imports are recorded once per imported name (`import { User, Role as R } from '../models'` → `../models/User`, `../models/Role`), default imports by their local name (`import X from 'm'` → `m/X`), including `import type`; namespace (`import * as ns`) and side-effect (`import './x'`) imports stay module-level. Qualified queries like `refs models/User` work too. Previously the whole statement was one import of the module path. Existing indexes rebuild automatically. ([#17](https://github.com/rohitkg98/smartgrep/issues/17))
 
