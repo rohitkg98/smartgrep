@@ -133,3 +133,22 @@ smartgrep query "functions where name starts_with 'New' and file contains 'servi
 - Use agent teams for research (codebase exploration, understanding existing code, gathering context).
 - Use agent teams for implementation (writing code, editing files, running tests).
 - The main agent focuses on decision-making, coordination, and communicating with the user.
+
+## Roadmap board
+GitHub Project "smartgrep roadmap" (https://github.com/users/rohitkg98/projects/2). Every item is a real issue in this repo; **board order is priority** (top = next). Always go through the script — don't create draft items (they don't show up reliably).
+```bash
+scripts/roadmap.sh list                                   # priority order, issue numbers, status
+scripts/roadmap.sh add "<title>" body.md --after 12       # new issue + board item (status Todo)
+scripts/roadmap.sh status 6 "In Progress"                 # Todo | In Progress | Done
+scripts/roadmap.sh move 13 --after 7                      # or --top
+gh issue view 6 / gh issue edit 6 --body-file body.md     # read/edit item details
+```
+- Starting work on an item: set it `In Progress`. Reference it in commits (`Refs #6`); use `Closes #6` in the commit that finishes it (the board's auto-close workflow moves it to Done).
+- Needs `gh` with the `project` scope (`gh auth refresh -s project`).
+- If `list` misses an item you just created, check https://www.githubstatus.com — the project item listing can lag during GitHub incidents even though the item exists (`gh issue view <N> --json projectItems`).
+
+## Commits and releases
+- Commit style: short lowercase subject (`added python support`, `bump version to 0.2.1`), optional bullet body. One logical change per commit — split refactors from features, and make sure each commit passes `cargo test` on its own.
+- Before committing: `cargo test` and `SMARTGREP=./target/debug/smartgrep bash tests/regression/run.sh` (CI runs both).
+- Release: `scripts/release.sh <X.Y.Z>` (try `--dry-run` first). It checks the tree is clean and in sync on `main`, runs tests + regression, bumps `Cargo.toml`/`Cargo.lock`, commits `bump version to X.Y.Z`, tags `vX.Y.Z`, pushes, then waits for `.github/workflows/release.yml` and verifies the 3 binaries are attached.
+- Versioning: minor bump for new languages/commands or index format changes, patch for fixes.
