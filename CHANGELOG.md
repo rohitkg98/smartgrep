@@ -6,6 +6,8 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-23
+
 ### Added
 - Call graph for all languages (Rust, Java, Go, TypeScript, Python): function and method bodies are walked for calls, so `deps <fn>` lists what a function calls and `refs <fn>` lists its callers. Static/module-qualified calls keep their path (`User::new`, `fmt.Errorf`, `os.path.join`); calls on an instance are recorded by method name (`self.save()` → `save`). ([#12](https://github.com/rohitkg98/smartgrep/issues/12))
 - `refs` accepts qualified names to narrow matches: `refs User::new`, `refs fmt.Errorf` (`::`, `.` and `/` are interchangeable).
