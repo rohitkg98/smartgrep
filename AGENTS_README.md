@@ -51,6 +51,7 @@ smartgrep show <name>            # full detail for one symbol
 smartgrep deps <name>            # what does <name> depend on?
 smartgrep refs <name>            # what references <name>?
 smartgrep index                  # force re-index (usually implicit)
+smartgrep init                   # set up a project: index, CLAUDE.md/AGENTS.md block, skill, .gitignore
 smartgrep query "<dsl>"          # composable query — use this for most questions
 ```
 

@@ -52,14 +52,16 @@ Add an entry to `LANGUAGES` in `src/lang.rs`:
 ```rust
 Language {
     name: "kotlin",
+    display_name: "Kotlin",
     extensions: &["kt", "kts"],
     parse: parser::kotlin::parse_file,
     project_markers: &["build.gradle.kts", "settings.gradle.kts"],
     skip_dirs: &["build", ".gradle"],
+    kinds: &["fun", "class", "interface", "object", "method"],
 },
 ```
 
-That single entry drives file collection, parser dispatch (`parse_by_extension`), project-root detection, daemon file watching, and `Index::languages`. There is no separate match arm to edit.
+That single entry drives file collection, parser dispatch (`parse_by_extension`), project-root detection, daemon file watching, `Index::languages`, and the kind vocabulary `smartgrep init` writes for the language (`kinds` lists every kind string the parser emits; a unit test checks each one is a query term). There is no separate match arm to edit.
 
 ## Step 4 — Wire up new kinds
 

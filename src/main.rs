@@ -37,6 +37,10 @@ fn main() -> anyhow::Result<()> {
         Command::InstallSkill { global } => {
             commands::install_skill::run(global)?;
         }
+        Command::Init { agents_md, no_skill, dry_run } => {
+            let opts = commands::init::InitOptions { agents_md, no_skill, dry_run };
+            commands::init::run(&cli.project_root, &opts)?;
+        }
         Command::Update => {
             commands::update::run()?;
         }

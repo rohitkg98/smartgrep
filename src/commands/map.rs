@@ -101,7 +101,7 @@ pub fn run(
 
 // --- Path helpers ---
 
-fn is_generated(path: &Path) -> bool {
+pub(crate) fn is_generated(path: &Path) -> bool {
     let s = path.to_string_lossy();
     for marker in &["/generated/", "/gen/", "/vendor/", "/third_party/", "/thirdparty/"] {
         if s.contains(marker) {

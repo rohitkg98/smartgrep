@@ -84,6 +84,18 @@ pub enum Command {
         #[arg(long)]
         global: bool,
     },
+    /// Make this project smartgrep-ready: index, agent instructions (CLAUDE.md/AGENTS.md), skill, .gitignore
+    Init {
+        /// Also create/update AGENTS.md (default: only existing CLAUDE.md/AGENTS.md, or a new CLAUDE.md)
+        #[arg(long)]
+        agents_md: bool,
+        /// Don't install the repo-scoped Claude Code skill
+        #[arg(long)]
+        no_skill: bool,
+        /// Show what would be created or changed without writing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Update smartgrep to the latest release
     Update,
     /// Project-wide structural map: files grouped by directory with their public symbols

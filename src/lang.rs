@@ -16,6 +16,8 @@ use crate::parser;
 pub struct Language {
     /// Lowercase language name (e.g. "rust", "typescript").
     pub name: &'static str,
+    /// Display name for human-facing text (e.g. "TypeScript").
+    pub display_name: &'static str,
     /// File extensions without the leading dot.
     pub extensions: &'static [&'static str],
     /// Parser entry point: path (relative to project root) + source text → IR.
@@ -24,6 +26,9 @@ pub struct Language {
     pub project_markers: &'static [&'static str],
     /// Directory names to skip while collecting sources (build output, caches, deps).
     pub skip_dirs: &'static [&'static str],
+    /// Language-native symbol kinds this parser emits (the query vocabulary,
+    /// see `normalize_kind_term` in `src/query/parser.rs`).
+    pub kinds: &'static [&'static str],
 }
 
 /// Directories skipped regardless of language.
@@ -33,34 +38,43 @@ pub const GLOBAL_SKIP_DIRS: &[&str] = &[".smartgrep", "target"];
 pub static LANGUAGES: &[Language] = &[
     Language {
         name: "rust",
+        display_name: "Rust",
         extensions: &["rs"],
         parse: parser::rust::parse_file,
         project_markers: &["Cargo.toml"],
         skip_dirs: &[],
+        kinds: &["fn", "method", "struct", "enum", "trait", "impl", "const", "type", "mod"],
     },
     Language {
         name: "java",
+        display_name: "Java",
         extensions: &["java"],
         parse: parser::java::parse_file,
         project_markers: &["pom.xml", "build.gradle", "build.gradle.kts"],
         skip_dirs: &[],
+        kinds: &["class", "interface", "enum", "record", "annotation", "method"],
     },
     Language {
         name: "go",
+        display_name: "Go",
         extensions: &["go"],
         parse: parser::go::parse_file,
         project_markers: &["go.mod"],
         skip_dirs: &[],
+        kinds: &["func", "method", "struct", "interface", "const", "type"],
     },
     Language {
         name: "typescript",
+        display_name: "TypeScript",
         extensions: &["ts", "tsx"],
         parse: parser::typescript::parse_file,
         project_markers: &["package.json", "tsconfig.json"],
         skip_dirs: &["node_modules"],
+        kinds: &["function", "class", "interface", "enum", "type", "method", "const", "namespace"],
     },
     Language {
         name: "python",
+        display_name: "Python",
         extensions: &["py", "pyi"],
         parse: parser::python::parse_file,
         project_markers: &["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"],
@@ -73,6 +87,7 @@ pub static LANGUAGES: &[Language] = &[
             ".mypy_cache",
             ".pytest_cache",
         ],
+        kinds: &["def", "class", "method", "const", "type"],
     },
 ];
 
@@ -135,6 +150,21 @@ mod tests {
         for l in LANGUAGES {
             for e in l.extensions {
                 assert!(seen.insert(*e), "extension {} registered twice", e);
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_are_query_terms() {
+        for l in LANGUAGES {
+            for k in l.kinds {
+                assert_eq!(
+                    crate::query::parser::normalize_kind_filter(k),
+                    Some(vec![k.to_string()]),
+                    "{} kind '{}' is not a query term",
+                    l.name,
+                    k
+                );
             }
         }
     }

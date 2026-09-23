@@ -45,6 +45,9 @@ run_cmd "context models.rs"   $SMARTGREP context "$SCRIPT_DIR/rust_project/src/m
 run_cmd "context service.rs"  $SMARTGREP context "$SCRIPT_DIR/rust_project/src/service.rs"
 run_cmd "context errors.rs"   $SMARTGREP context "$SCRIPT_DIR/rust_project/src/errors.rs"
 
+section "init --dry-run — onboarding preview (writes nothing)"
+run_cmd "init --dry-run" $SMARTGREP init --dry-run --project-root "$SCRIPT_DIR/rust_project"
+
 section "map — project overview"
 run_cmd "map" $SMARTGREP map --project-root "$SCRIPT_DIR/rust_project"
 run_cmd "map --symbols" $SMARTGREP map --symbols --project-root "$SCRIPT_DIR/rust_project"
