@@ -13,6 +13,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_RELEASE_STRIP: symbols
 
 jobs:
   build:
@@ -65,9 +66,11 @@ jobs:
             os: ubuntu-24.04
             build: zig
             smoke: qemu
+          # No musl: s390x-unknown-linux-musl is tier 3 (no prebuilt std).
           - target: s390x-unknown-linux-gnu
             os: ubuntu-24.04
-            build: cross
+            build: zig
+            glibc: '2.17'
             smoke: docker
             platform: linux/s390x
           - target: loongarch64-unknown-linux-musl
@@ -107,12 +110,6 @@ jobs:
         # No dependency on the VC++ redistributable (vcruntime140.dll).
         run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
 
-      - name: Static linking (musl)
-        if: contains(matrix.target, 'musl')
-        shell: bash
-        # Newer musl targets (riscv64gc, loongarch64, powerpc64le) link dynamically by default.
-        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
-
       - name: Install musl tools
         if: matrix.build == 'native' && contains(matrix.target, 'linux-musl')
         run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
@@ -134,13 +131,21 @@ jobs:
         with:
           tool: cargo-zigbuild
 
+      - name: Static linking (musl)
+        # After installing tools: RUSTFLAGS would also break `cargo install cross`.
+        if: contains(matrix.target, 'musl')
+        shell: bash
+        # Newer musl targets (riscv64gc, loongarch64, powerpc64le) link dynamically by default.
+        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> "$GITHUB_ENV"
+
       - name: Build
         shell: bash
         run: |
           case "${{ matrix.build }}" in
             native) cargo build --release --locked --target ${{ matrix.target }} ;;
             cross)  cross build --release --locked --target ${{ matrix.target }} ;;
-            zig)    cargo zigbuild --release --locked --target ${{ matrix.target }} ;;
+            # `<target>.<glibc>` links against that glibc version (the oldest it will run on)
+            zig)    cargo zigbuild --release --locked --target ${{ matrix.target }}${{ matrix.glibc && format('.{0}', matrix.glibc) || '' }} ;;
           esac
 
       - name: Package
