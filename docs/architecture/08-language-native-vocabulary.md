@@ -86,11 +86,11 @@ Note the asymmetry between `function` and `functions`: the singular is TypeScrip
 <source> [in <path>] [implementing <name>] [where <conditions>] [| <stages>]
 ```
 
-`implementing` keeps only symbols that are the `from` side of an `Implements` dependency whose `to` equals `<name>`:
+`implementing` keeps only symbols that are the `from` side of an `Implements` dependency matching `<name>`. It uses the same name matching as `refs` (see [04](04-index)): a bare name matches the last path segment with generics stripped, a qualified name matches as a segment suffix. So `implementing Display` finds `impl fmt::Display for X`, and `implementing Processor` finds `implements Processor<String>`:
 
 ```rust
-let implementors: HashSet<&str> = index.deps.iter()
-    .filter(|d| d.kind == DepKind::Implements && d.to_name == name)
+let implementors: HashSet<&str> = index.refs_to(name).into_iter()
+    .filter(|d| d.kind == DepKind::Implements)
     .map(|d| d.from_qualified.as_str())
     .collect();
 symbols.retain(|s| implementors.contains(s.qualified_name.as_str()));
@@ -125,7 +125,7 @@ To find types that satisfy an interface, check which types have the required met
 ## Trade-offs and known gaps
 
 - **More terms to learn.** An agent must know that Go says `funcs` and Python says `defs`. The per-language error message and the `functions` umbrella soften this; the payoff is that terms match the code being read.
-- **`implementing` matches names textually.** `to_name` is stored exactly as written, so `impl fmt::Display for X` is found by `implementing fmt::Display`, not `implementing Display`, and Java `implements Processor<String>` is stored with its type arguments, so `implementing Processor` misses it. Rust impls on generic types (`impl<T> Foo<T>`) record `from` as `mod::Foo<T>`, which doesn't match the struct's qualified name.
+- **`implementing` is name-based, not resolved.** Matching is by path segments, not by following imports, so `implementing std::fmt::Display` does not match an impl written as `fmt::Display` (use the bare `Display`), and two unrelated traits with the same last segment are indistinguishable. Rust impls on generic types (`impl<T> Foo<T>`) record `from` as `mod::Foo<T>`, which doesn't match the struct's qualified name.
 - **Go error is narrow.** It fires only when every kind in the filter is `func`. Since `structs`/`interfaces`/`types` are shared with other languages, `structs implementing Writer` on a Go project just returns no results rather than the explanatory error.
 - **Rust `impl` symbols share the type's qualified name**, so `symbols implementing Foo` also returns the matching `impl` rows; use `structs`/`enums` to get just the types.
 - **Java interface inheritance** (`interface A extends B`) is not recorded as `Implements`.

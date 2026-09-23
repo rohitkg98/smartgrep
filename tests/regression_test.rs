@@ -241,15 +241,89 @@ fn go_refs_to_package_finds_imports_and_calls() {
         .any(|d| d.kind == DepKind::Call && d.from_qualified == "main.AppError.Error"));
 }
 
+fn assert_calls_include(index: &Index, qn: &str, expected: &[&str]) {
+    let calls = calls_of(index, qn);
+    for e in expected {
+        assert!(calls.contains(e), "{} calls {:?}, missing {}", qn, calls, e);
+    }
+}
+
 // ---------------------------------------------------------------------------
-// TODO(java/ts/python): fill in after the Java / TypeScript / Python parser
-// call-graph work is merged. Suggested facts:
-//   - java_project: refs_to(<type>) finds imports + `new <Type>()` callers;
-//     deps_of(<method>) includes its calls; `classes implementing <Iface>`
-//     matches `implements <Iface><T>` / fully qualified interfaces.
-//   - ts_project: refs_to(<class>) finds `import { X }` sites + `new X()`;
-//     deps_of(<function>) includes calls; `classes implementing <Iface>`.
-//   - python_project: refs_to(<class>) finds `from m import X` + `X()` calls;
-//     deps_of(<def>) includes calls; `classes implementing <Base>` via
-//     `Base[T]` / `module.Base`.
+// Java
 // ---------------------------------------------------------------------------
+
+#[test]
+fn java_deps_of_method_include_calls() {
+    let index = build_index("java_project");
+    // `new User(..)` is recorded as `User`; `this.users.put` reduces to `put`.
+    assert_calls_include(&index, "com.example.UserService.createUser", &["User", "validate", "put", "getId"]);
+    let calls = calls_of(&index, "com.example.UserService.createUser");
+    assert!(calls.iter().all(|c| !c.starts_with("this.") && !c.starts_with("users.")), "{:?}", calls);
+    // Static call on a class keeps its qualifier.
+    assert_calls_include(&index, "com.example.User.toString", &["String.format"]);
+    assert_calls_include(&index, "com.example.User.validate", &["ValidationException", "isEmpty"]);
+}
+
+#[test]
+fn java_refs_and_implementing() {
+    let index = build_index("java_project");
+    assert!(has_ref(&index, "validate", DepKind::Call, "com.example.UserService.createUser"));
+    assert!(has_ref(&index, "validate", DepKind::Call, "com.example.UserService.save"));
+    assert!(has_ref(&index, "ValidationException", DepKind::Call, "com.example.User.validate"));
+    // `implements Repository<User>` matches the bare interface name.
+    assert_eq!(query_names(&index, "classes implementing Repository"), vec!["UserService"]);
+}
+
+// ---------------------------------------------------------------------------
+// TypeScript
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ts_deps_of_method_include_calls() {
+    let index = build_index("ts_project");
+    assert_calls_include(&index, "services.UserService.createUser", &["User", "validate", "set", "getId"]);
+    // `Array.from` is a global namespace call and keeps its qualifier.
+    assert_calls_include(&index, "services.UserService.listAll", &["Array.from", "values"]);
+    assert_calls_include(&index, "services.UserService.deactivateUser", &["Error", "get", "deactivate"]);
+}
+
+#[test]
+fn ts_refs_to_function_finds_callers() {
+    let index = build_index("ts_project");
+    assert!(has_ref(&index, "validate", DepKind::Call, "validateAll"));
+    assert!(has_ref(&index, "validate", DepKind::Call, "services.UserService.createUser"));
+    assert!(has_ref(&index, "User", DepKind::Call, "services.UserService.createUser"));
+}
+
+// ---------------------------------------------------------------------------
+// Python
+// ---------------------------------------------------------------------------
+
+#[test]
+fn python_deps_of_method_include_calls() {
+    let index = build_index("python_project");
+    // `logger.info` (instance receiver) reduces to `info`.
+    assert_calls_include(
+        &index,
+        "shop.services.user_service.UserService.register",
+        &["User", "len", "ensure_valid", "add", "info"],
+    );
+    assert_calls_include(&index, "shop.models.user.User.ensure_valid", &["validate", "ValidationError"]);
+    // `super().__init__(..)` records `__init__`, never `super`.
+    let calls = calls_of(&index, "shop.models.base.ValidationError.__init__");
+    assert!(calls.contains(&"__init__") && !calls.contains(&"super"), "{:?}", calls);
+}
+
+#[test]
+fn python_refs_find_imports_and_callers() {
+    let index = build_index("python_project");
+    assert!(has_ref(&index, "ensure_valid", DepKind::Call, "shop.services.user_service.UserService.register"));
+    // `from ..models.user import User` resolves to `shop.models.user.User`.
+    assert!(has_ref(&index, "User", DepKind::Import, "shop.services.user_service"));
+    assert!(has_ref(&index, "User", DepKind::Call, "shop.services.user_service.UserService.register"));
+    // Module-level `logging.getLogger(..)` has no enclosing function.
+    assert!(index.refs_to("logging.getLogger").is_empty());
+    // Base classes: `class User(Entity, Validatable)`, `class Repository(Generic[E])`.
+    assert_eq!(query_names(&index, "classes implementing Entity"), vec!["User"]);
+    assert_eq!(query_names(&index, "classes implementing Generic"), vec!["Repository"]);
+}

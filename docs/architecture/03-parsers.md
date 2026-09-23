@@ -24,7 +24,7 @@ A parser receives a file path (relative to the project root) and its source text
 1. Passes the text to the tree-sitter parser for its language.
 2. Walks the resulting syntax tree.
 3. At each node of interest (function definition, struct/class definition, impl block, etc.) it constructs a `Symbol` — with the language's own keyword as `kind` — and pushes it onto a `Vec<Symbol>`.
-4. When it encounters a relationship it records (an import, or an `impl Trait for T` / `extends` / `implements` / base class) it constructs a `Dependency` and pushes it onto a `Vec<Dependency>`. Function calls and type references are not extracted yet.
+4. When it encounters a relationship it records (an import, or an `impl Trait for T` / `extends` / `implements` / base class) it constructs a `Dependency` and pushes it onto a `Vec<Dependency>`. Function and method bodies are walked for call expressions, emitted as `Call` deps via `common::push_call_deps` (sorted by position, one per callee per function). Type references are not extracted yet.
 5. Returns `Ir { symbols, dependencies }`.
 
 ```

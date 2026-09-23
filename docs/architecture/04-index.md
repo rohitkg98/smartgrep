@@ -39,7 +39,7 @@ pub fn build(ir: &Ir) -> Index
 It clones the symbols and deps from the `Ir` once, then builds the four maps in a single pass over each list:
 
 1. For each symbol at index `i`: insert `i` into `name_lookup[sym.name]`, `file_lookup[sym.loc.file]`, and `qualified_lookup[sym.qualified_name]`.
-2. For each dependency at index `i`: insert `i` into `reverse_deps[dep.to_name]`.
+2. For each dependency at index `i`: insert `i` into `reverse_deps[dep_target_key(dep.to_name)]` — the last path segment with generics stripped (`crate::index::types::Index` → `Index`, `Processor<String>` → `Processor`, `os.path.join` → `join`). A qualified `Call` is also indexed under its owner segment (`User::new` → `User`), so `refs User` lists `User::new(..)` call sites. Normalization lives in `src/ir/names.rs`.
 
 No parsing, no I/O, no language knowledge. Just hash map construction.
 
@@ -52,7 +52,7 @@ No parsing, no I/O, no language knowledge. Just hash map construction.
 | `deps Foo` | `by_name("Foo")`, then `deps_of(qualified_name)` for each | `name_lookup` + linear scan on `deps` |
 | `refs Foo` | `refs_to("Foo")` | `reverse_deps` |
 
-`by_kind` / `by_kinds` and `deps_of` are linear scans (kind strings are matched directly — see [08](08-language-native-vocabulary)). For most codebases this is fast enough; the reverse direction (`refs_to`) uses the pre-built `reverse_deps` map, keyed by the dep's `to_name` exactly as the parser wrote it.
+`by_kind` / `by_kinds` and `deps_of` are linear scans (kind strings are matched directly — see [08](08-language-native-vocabulary)). For most codebases this is fast enough; the reverse direction (`refs_to`) uses the pre-built `reverse_deps` map. A bare name (`refs validate`) is a key lookup; a qualified name (`refs User::new`, `refs fmt.Errorf`) looks up its last segment and keeps deps whose path ends with the query's segments — `::`, `.` and `/` are treated as the same separator. Matching is by name, not resolved through imports or types: `refs new` returns every `new` call.
 
 ## Testing the index builder
 

@@ -66,7 +66,7 @@ Symbols use language-native kind strings, not a shared enum:
 - **TypeScript:** function, class, interface, enum, type, method, const, namespace
 - **Python:** def, class, method, const, type
 
-Dependency kinds: Call (was FunctionCall), TypeRef (was TypeReference), Implements (was TraitImpl)
+Dependency kinds emitted: Import, Call (per function/method body; instance calls reduced to the method name), Implements. `refs`/`implementing` match by name: bare names match the last path segment (`refs Index` finds `use crate::index::types::Index`), qualified names match as a suffix (`refs User::new`, `refs fmt.Errorf`). Name-based, not type-resolved: `refs new` returns every `new` call.
 
 ### Cross-language queries
 Umbrella terms find symbols across all languages:

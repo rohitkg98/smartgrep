@@ -72,7 +72,7 @@ Symbols use language-native kind strings, not a shared enum. The `kind` field on
 | **TypeScript** | function, class, interface, enum, type, method, const, namespace |
 | **Python** | def, class, method, const, type |
 
-**Dependency kinds:** Call, TypeRef, Implements (renamed from FunctionCall, TypeReference, TraitImpl)
+**Dependency kinds:** Import, Call, Implements. `refs X` matches by name (last path segment, generics ignored); qualify to narrow: `refs User::new`, `refs fmt.Errorf`. Calls on instances are recorded by method name only (`self.save()` → `save`). Not type-resolved: `refs new` returns every `new` call.
 
 **`interfaces` vs `traits`:**
 - `interfaces` = kind="interface" (Java, Go, and TypeScript)

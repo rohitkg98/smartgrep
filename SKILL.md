@@ -102,7 +102,7 @@ Symbols use language-native kind strings (not a shared enum):
 | **TypeScript** | function, class, interface, enum, type, method, const, namespace |
 | **Python** | def, class, method, const, type |
 
-**Dependency kinds:** Call, TypeRef, Implements
+**Dependency kinds:** Import, Call, Implements. `refs X` matches by name (last path segment, generics ignored); qualify to narrow: `refs User::new`, `refs fmt.Errorf`. Calls on instances are recorded by method name only (`self.save()` → `save`).
 
 **`interfaces` vs `traits`:** `interfaces` = Java/Go/TS interface; `traits` = Rust trait. They are distinct.
 
