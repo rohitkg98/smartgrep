@@ -38,7 +38,7 @@ Both install a prebuilt binary for your platform from the [latest release](https
 |---|---|---|
 | macOS | Apple Silicon (arm64), Intel (x86_64) | `smartgrep-{aarch64,x86_64}-apple-darwin.tar.gz` |
 | Linux | x86_64, arm64, armv7, armv6 (Raspberry Pi Zero/1), i686, riscv64, ppc64le, loongarch64 | `smartgrep-<arch>-unknown-linux-musl*.tar.gz` (static, any distro) |
-| Linux | s390x | `smartgrep-s390x-unknown-linux-gnu.tar.gz` (glibc 2.31+) |
+| Linux | s390x | `smartgrep-s390x-unknown-linux-gnu.tar.gz` (glibc 2.17+) |
 | Windows | x86_64, arm64 | `smartgrep-{x86_64,aarch64}-pc-windows-msvc.zip` |
 | FreeBSD | x86_64 | `smartgrep-x86_64-unknown-freebsd.tar.gz` |
 | Android (Termux) | arm64, armv7 | uses the static Linux binaries; installs into `$PREFIX/bin` |
