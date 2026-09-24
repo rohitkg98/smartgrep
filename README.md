@@ -268,3 +268,9 @@ Parser (tree-sitter) --> IR --> Index Builder --> Index --> Commands / Query Eng
 Auto-indexing: queries trigger indexing implicitly. The index rebuilds when source files change.
 
 See [AGENTS_README.md](AGENTS_README.md) for the agent-targeted reference.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in smartgrep by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

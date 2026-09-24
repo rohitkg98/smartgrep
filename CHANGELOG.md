@@ -8,6 +8,7 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ### Added
 - `smartgrep --version` (`-V`) prints the installed version. ([#21](https://github.com/rohitkg98/smartgrep/issues/21))
+- Licensed as `MIT OR Apache-2.0` (LICENSE-MIT, LICENSE-APACHE). ([#22](https://github.com/rohitkg98/smartgrep/issues/22))
 
 ## [0.5.1] - 2026-09-23
 
