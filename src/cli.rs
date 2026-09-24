@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "smartgrep", about = "Structural code navigation for agents")]
+#[command(name = "smartgrep", version, about = "Structural code navigation for agents")]
 pub struct Cli {
     /// Output format: text or json
     #[arg(long, default_value = "text", global = true)]

@@ -6,6 +6,9 @@ Add entries under **Unreleased** in the same commit as the change. `scripts/rele
 
 ## [Unreleased]
 
+### Added
+- `smartgrep --version` (`-V`) prints the installed version. ([#21](https://github.com/rohitkg98/smartgrep/issues/21))
+
 ## [0.5.1] - 2026-09-23
 
 ### Added
