@@ -1,0 +1,9 @@
+# Test fixture in the same schema as the private task set's repos.toml.
+# url/sha are placeholders; the end-to-end test rewrites them to a local git repo.
+[[repo]]
+id = "tiny"
+url = "file:///nonexistent/tiny"
+ref = "v0.0.1"
+sha = "0000000000000000000000000000000000000000"
+language = "python"
+setup = ["touch .setup-ran"]

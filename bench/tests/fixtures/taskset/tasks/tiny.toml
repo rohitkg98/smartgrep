@@ -1,0 +1,17 @@
+[[task]]
+id = "tiny-shape-subclasses"
+repo = "tiny"
+kind = "answer"
+prompt = """Which classes in this repository derive (directly or indirectly) from `Shape`? SECRET-PROMPT-MARKER"""
+answer_format = "fully qualified class names, e.g. pkg.shapes.Circle"
+gold = ["pkg.shapes.Circle", ["pkg.shapes.RoundedSquare", "pkg.square.RoundedSquare"]]
+pass_f1 = 0.9
+
+[[task]]
+id = "tiny-add-double"
+repo = "tiny"
+kind = "change"
+prompt = """Add a function `double(x)` to pkg/util.py that returns twice its argument."""
+hidden_tests = "tiny-add-double"
+test_cmd = "python3 -m unittest tests.test_hidden"
+timeout_s = 60
